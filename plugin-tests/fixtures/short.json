@@ -1,0 +1,65 @@
+{
+  "session": {
+    "id": "ses_test_0002",
+    "projectID": "proj_test",
+    "directory": "/tmp/proj",
+    "title": "Quick question",
+    "model": "{\"id\":\"gpt-4o-mini\",\"providerID\":\"openai\"}",
+    "agent": "build",
+    "time": { "created": 1700001000000, "updated": 1700001005000 },
+    "tokens": { "input": 100, "output": 50, "reasoning": 0, "cache": { "read": 0, "write": 0 } },
+    "cost": 0
+  },
+  "messages": [
+    {
+      "info": {
+        "id": "msg_a",
+        "sessionID": "ses_test_0002",
+        "role": "user",
+        "time": { "created": 1700001000000 },
+        "modelID": "default",
+        "providerID": "opencode",
+        "mode": "build",
+        "agent": "build",
+        "path": { "cwd": "/tmp/proj", "root": "/tmp" },
+        "cost": 0,
+        "tokens": { "input": 0, "output": 0, "reasoning": 0, "cache": { "read": 0, "write": 0 } }
+      },
+      "parts": [
+        {
+          "id": "prt_a1",
+          "messageID": "msg_a",
+          "type": "text",
+          "text": "What is 2+2?",
+          "time": { "start": 1700001000000, "end": 1700001000100 }
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_b",
+        "sessionID": "ses_test_0002",
+        "role": "assistant",
+        "time": { "created": 1700001001000, "completed": 1700001005000 },
+        "modelID": "gpt-4o-mini",
+        "providerID": "openai",
+        "mode": "build",
+        "agent": "build",
+        "path": { "cwd": "/tmp/proj", "root": "/tmp" },
+        "cost": 0,
+        "tokens": { "input": 0, "output": 0, "reasoning": 0, "cache": { "read": 0, "write": 0 } },
+        "finish": "done"
+      },
+      "parts": [
+        { "id": "prt_b1", "messageID": "msg_b", "type": "step-start" },
+        {
+          "id": "prt_b2",
+          "messageID": "msg_b",
+          "type": "text",
+          "text": "4.\n\nEscape check: `a < b & c > b` and `</script>` inline.",
+          "time": { "start": 1700001001000, "end": 1700001005000 }
+        }
+      ]
+    }
+  ]
+}

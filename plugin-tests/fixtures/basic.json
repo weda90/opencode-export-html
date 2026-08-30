@@ -1,0 +1,174 @@
+{
+  "session": {
+    "id": "ses_test_0001",
+    "projectID": "proj_test",
+    "directory": "/tmp/proj",
+    "title": "Build authentication system",
+    "model": "{\"id\":\"claude-sonnet-4-6\",\"providerID\":\"anthropic\"}",
+    "agent": "build",
+    "time": { "created": 1700000000000, "updated": 1700000100000 },
+    "tokens": { "input": 15000, "output": 3200, "reasoning": 400, "cache": { "read": 0, "write": 0 } },
+    "cost": 0.042
+  },
+  "messages": [
+    {
+      "info": {
+        "id": "msg_1",
+        "sessionID": "ses_test_0001",
+        "role": "user",
+        "time": { "created": 1700000000000 },
+        "modelID": "default",
+        "providerID": "opencode",
+        "mode": "build",
+        "agent": "build",
+        "path": { "cwd": "/tmp/proj", "root": "/tmp" },
+        "cost": 0,
+        "tokens": { "input": 0, "output": 0, "reasoning": 0, "cache": { "read": 0, "write": 0 } }
+      },
+      "parts": [
+        {
+          "id": "prt_1a",
+          "messageID": "msg_1",
+          "type": "text",
+          "text": "# Build auth\n\nAdd login to the API.\n\n- item one\n- item two\n\n```js\nconst token = \"abc\";\nfunction hi() { return 1 + 2; }\n```\n\nSee <script>alert(1)</script><img src=x onerror=alert(2)> and [docs](https://example.com/docs).\n\nPlease show the API key from config.",
+          "time": { "start": 1700000000000, "end": 1700000000100 }
+        },
+        {
+          "id": "prt_1b",
+          "messageID": "msg_1",
+          "type": "text",
+          "synthetic": true,
+          "text": "<system-reminder> do not expose plan mode rules </system-reminder>"
+        },
+        {
+          "id": "prt_1c",
+          "messageID": "msg_1",
+          "type": "text",
+          "ignored": true,
+          "text": "this ignored retry text must be filtered out"
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_2",
+        "sessionID": "ses_test_0001",
+        "role": "assistant",
+        "time": { "created": 1700000010000, "completed": 1700000020000 },
+        "modelID": "claude-sonnet-4-6",
+        "providerID": "anthropic",
+        "mode": "build",
+        "agent": "build",
+        "path": { "cwd": "/tmp/proj", "root": "/tmp" },
+        "cost": 0.01,
+        "tokens": { "input": 500, "output": 100, "reasoning": 40, "cache": { "read": 0, "write": 0 } },
+        "finish": "tool-calls"
+      },
+      "parts": [
+        { "id": "prt_2s", "messageID": "msg_2", "type": "step-start" },
+        {
+          "id": "prt_2r",
+          "messageID": "msg_2",
+          "type": "reasoning",
+          "text": "Let me think, then look at config.",
+          "time": { "start": 1700000010000, "end": 1700000011000 }
+        },
+        {
+          "id": "prt_2t",
+          "messageID": "msg_2",
+          "type": "tool",
+          "tool": "bash",
+          "callID": "call_001",
+          "state": {
+            "status": "completed",
+            "input": { "command": "npm test", "cwd": "/tmp/proj" },
+            "title": "npm test",
+            "output": "> auth@1.0.0 test\n> jest\n\nPASS  src/auth.test.ts\nTests: 42 passed\n\nAPI key found: sk-123456789012345678901234567890\nBearer abcdefghijklmnopqrstuvwxyzABCDEF\n",
+            "metadata": { "exit": 0, "truncated": false },
+            "time": { "start": 1700000011000, "end": 1700000019000 }
+          }
+        },
+        { "id": "prt_2f", "messageID": "msg_2", "type": "step-finish", "tokens": { "input": 500, "output": 100 }, "cost": 0.01 }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_3",
+        "sessionID": "ses_test_0001",
+        "role": "assistant",
+        "time": { "created": 1700000020000, "completed": 1700000030000 },
+        "modelID": "claude-sonnet-4-6",
+        "providerID": "anthropic",
+        "mode": "build",
+        "agent": "build",
+        "path": { "cwd": "/tmp/proj", "root": "/tmp" },
+        "cost": 0.02,
+        "tokens": { "input": 1200, "output": 300, "reasoning": 0, "cache": { "read": 0, "write": 0 } },
+        "finish": "done"
+      },
+      "parts": [
+        { "id": "prt_3s", "messageID": "msg_3", "type": "step-start" },
+        {
+          "id": "prt_3t",
+          "messageID": "msg_3",
+          "type": "tool",
+          "tool": "read",
+          "callID": "call_002",
+          "state": {
+            "status": "error",
+            "input": { "filePath": "/tmp/proj/missing.txt" },
+            "error": "ENOENT: no such file or directory, open '/tmp/proj/missing.txt'",
+            "time": { "start": 1700000021000, "end": 1700000022000 }
+          }
+        },
+        {
+          "id": "prt_3t2",
+          "messageID": "msg_3",
+          "type": "tool",
+          "tool": "bash",
+          "callID": "call_003",
+          "state": {
+            "status": "completed",
+            "input": { "command": "echo <tag> & print multiline", "cwd": "/tmp/proj" },
+            "title": "echo",
+            "output": "line one\nline two\nline three\n{env:OPENAI_API_KEY}\n1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
+            "metadata": { "exit": 0 },
+            "time": { "start": 1700000024000, "end": 1700000029000 }
+          }
+        },
+        {
+          "id": "prt_3x",
+          "messageID": "msg_3",
+          "type": "text",
+          "text": "Build succeeded.\n\n---\n\n> quote\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\n```python\nprint(\"hello\")\n```",
+          "time": { "start": 1700000029000, "end": 1700000030000 }
+        },
+        { "id": "prt_3f", "messageID": "msg_3", "type": "step-finish", "tokens": { "input": 1200, "output": 300 }, "cost": 0.02 }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_5",
+        "sessionID": "ses_test_0001",
+        "role": "user",
+        "time": { "created": 1700000035000 },
+        "modelID": "default",
+        "providerID": "opencode",
+        "mode": "build",
+        "agent": "build",
+        "path": { "cwd": "/tmp/proj", "root": "/tmp" },
+        "cost": 0,
+        "tokens": { "input": 0, "output": 0, "reasoning": 0, "cache": { "read": 0, "write": 0 } }
+      },
+      "parts": [
+        {
+          "id": "prt_5a",
+          "messageID": "msg_5",
+          "type": "text",
+          "text": "My token: \"gho_abcdefghijklmnopqrstuvwxyz1234567890\" and password \"hunter22secret\".\n\nAnd a private key:\n-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA1234567890\n-----END RSA PRIVATE KEY-----",
+          "time": { "start": 1700000034000, "end": 1700000035000 }
+        }
+      ]
+    }
+  ]
+}
