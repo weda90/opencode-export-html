@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   applyRedaction,
   escapeHtml,
+  extractMessageText,
   isExportHtmlPrompt,
   loadConversation,
   markdownToHtml,
@@ -240,11 +241,26 @@ describe("loadConversation", () => {
   })
 })
 
+describe("extractMessageText", () => {
+  test("extracts text from string or parts-based messages", () => {
+    expect(extractMessageText({ text: "hello" })).toBe("hello")
+    expect(extractMessageText(null)).toBe("")
+    expect(extractMessageText({ parts: [{ type: "text", text: "a" }, { type: "tool", tool: "x" }, { type: "text", text: "b" }] })).toBe("a\nb")
+    expect(extractMessageText({ parts: [{ type: "tool", tool: "x" }] })).toBe("")
+  })
+})
+
 describe("isExportHtmlPrompt", () => {
   test("matches the slash-command template, ignores plain user text", () => {
     const cmd = (selfExportFixture as any).messages[0].parts[0].text as string
     expect(isExportHtmlPrompt(cmd, "user")).toBe(true)
     expect(isExportHtmlPrompt("Export the current conversation to a single-file, offline-portable HTML report using the `export_html` tool.", "user")).toBe(true)
+    expect(
+      isExportHtmlPrompt(
+        "Call the `export_html` tool once to export this conversation to a single-file, offline-portable HTML report with these `$ARGUMENTS` mapped to its parameters, then reply with the absolute path and the export stats it returns.",
+        "user",
+      ),
+    ).toBe(true)
     expect(isExportHtmlPrompt("offline-portable HTML report using the `export_html` tool.", "user")).toBe(true)
     expect(isExportHtmlPrompt("Normal question about the layout.", "user")).toBe(false)
     expect(isExportHtmlPrompt("Export the conversation to a PDF.", "user")).toBe(false)

@@ -994,6 +994,18 @@ async function exportCurrentSession(
 
 /* -------------------------- 8. plugin export ------------------------------ */
 
+export function extractMessageText(message: any): string {
+  if (!message) return ""
+  if (typeof message.text === "string") return message.text
+  if (Array.isArray(message.parts)) {
+    return message.parts
+      .filter((p) => p && p.type === "text")
+      .map((p) => String(p.text ?? ""))
+      .join("\n")
+  }
+  return ""
+}
+
 export const ExportHtmlPlugin: Plugin = async ({ client, directory }) => {
   const export_html = tool({
     description:
@@ -1034,7 +1046,25 @@ export const ExportHtmlPlugin: Plugin = async ({ client, directory }) => {
     },
   })
 
-  return { tool: { export_html } }
+  return {
+    tool: { export_html },
+    hooks: {
+      "chat.params": async (input, output) => {
+        try {
+          const text = extractMessageText(input.message)
+          if (isExportHtmlPrompt(text)) {
+            output.options = {
+              ...output.options,
+              thinking: { type: "disabled" },
+              reasoning_effort: "none",
+            }
+          }
+        } catch {
+          /* never let a params tweak break the chat turn */
+        }
+      },
+    },
+  }
 }
 
 export default ExportHtmlPlugin
