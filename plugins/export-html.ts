@@ -53,6 +53,9 @@ type ToolRender = {
   start?: number
   end?: number
   attachments: FileRender[]
+  diff?: string
+  filePath?: string
+  content?: string
 }
 
 type ItemRender =
@@ -303,6 +306,14 @@ function rawText(value: unknown): string {
   return String(value ?? "")
 }
 
+const EXPORT_PROMPT_MARKERS = ["offline-portable HTML report", "`export_html`"]
+
+/** True when a user text part is our own /export-html slash-command prompt. */
+export function isExportHtmlPrompt(text: string, role?: string): boolean {
+  if (role === "assistant") return false
+  return EXPORT_PROMPT_MARKERS.every((m) => text.includes(m))
+}
+
 export async function loadConversation(
   session: any,
   messages: Array<{ info?: any; parts?: any[] }>,
@@ -337,11 +348,15 @@ export async function loadConversation(
     const parts = m.parts ?? []
     const items: ItemRender[] = []
 
+    const isExportTurn = parts.some((p) => p && p.type === "tool" && p.tool === "export_html")
+    if (isExportTurn) continue
+
     for (const part of parts) {
       const t = part?.type
       if (t === "step-start") continue
 
       if (t === "tool") {
+        if (part.tool === "export_html") continue
         const st = part.state ?? {}
         const status = st.status || "pending"
         const inputRaw = st.input
@@ -351,8 +366,35 @@ export async function loadConversation(
             : inputRaw && typeof inputRaw === "object" && typeof (inputRaw as any).command === "string"
               ? rawText((inputRaw as any).command)
               : JSON.stringify(inputRaw ?? {}, null, 2)
-        const redInput = redact ? applyRedaction(inputText, "tool") : { text: inputText, count: 0 }
+        const diff =
+          typeof (st.metadata as any)?.diff === "string"
+            ? String((st.metadata as any).diff)
+            : typeof st.diff === "string"
+              ? String(st.diff)
+              : undefined
+        const filePath =
+          inputRaw &&
+          typeof inputRaw === "object" &&
+          typeof (inputRaw as any).filePath === "string"
+            ? String((inputRaw as any).filePath)
+            : undefined
+        const content =
+          inputRaw &&
+          typeof inputRaw === "object" &&
+          part.tool === "write" &&
+          typeof (inputRaw as any).content === "string"
+            ? String((inputRaw as any).content)
+            : undefined
+        const inputForCard = content !== undefined && filePath ? filePath : inputText
+        const redInput = redact ? applyRedaction(inputForCard, "tool") : { text: inputForCard, count: 0 }
         redactions += redInput.count
+
+        let contentText: string | undefined
+        if (content !== undefined) {
+          const rc = redact ? applyRedaction(content, "tool") : { text: content, count: 0 }
+          redactions += rc.count
+          contentText = rc.text
+        }
 
         let outputText: string | undefined
         if (status === "error") outputText = rawText(st.error)
@@ -361,6 +403,13 @@ export async function loadConversation(
           const redOut = redact ? applyRedaction(outputText, "tool") : { text: outputText, count: 0 }
           redactions += redOut.count
           outputText = redOut.text
+        }
+
+        let diffText: string | undefined
+        if (diff !== undefined) {
+          const redDiff = redact ? applyRedaction(diff, "tool") : { text: diff, count: 0 }
+          redactions += redDiff.count
+          diffText = redDiff.text
         }
 
         const attachments: FileRender[] = (st.attachments || part.attachments || []).map((a: any) => ({
@@ -382,6 +431,9 @@ export async function loadConversation(
           start: st.time?.start,
           end: st.time?.end,
           attachments,
+          diff: diffText,
+          filePath,
+          content: contentText,
         })
       } else if (t === "reasoning") {
         statReasoning++
@@ -394,7 +446,9 @@ export async function loadConversation(
         items.push({ kind: "file", mime: part.mime, filename: part.filename, url: part.url })
       } else if (t === "text") {
         if (part.synthetic || part.ignored) continue
-        const tt = redact ? applyRedaction(rawText(part.text), "all") : { text: rawText(part.text), count: 0 }
+        const ttRaw = rawText(part.text)
+        if (isExportHtmlPrompt(ttRaw, info.role)) continue
+        const tt = redact ? applyRedaction(ttRaw, "all") : { text: ttRaw, count: 0 }
         redactions += tt.count
         items.push({ kind: "text", role: info.role || "assistant", html: await markdownToHtml(tt.text) })
       } else if (t === "step-finish") {
@@ -572,6 +626,45 @@ footer.chat-footer { margin-top: 40px; padding-top: 14px; border-top: 1px solid 
 .hljs-subst { color:#c9d1d9; }
 .hljs-emphasis { font-style: italic; }
 .hljs-strong { font-weight: 600; }
+.edit-diff {
+  margin: .6em 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--code-bg);
+  color: var(--code-fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .78rem;
+}
+.edit-diff-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; background: var(--bg-soft);
+  border-bottom: 1px solid var(--border); color: var(--fg);
+}
+.edit-diff-header .edit-icon { color: var(--muted); }
+.edit-diff-header .edit-tool { font-weight: 600; }
+.edit-diff-header .edit-file {
+  color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.diff { overflow-x: auto; }
+.diff-line {
+  display: grid; grid-template-columns: 24px minmax(0, 1fr);
+  min-height: 21px; line-height: 21px; white-space: pre;
+}
+.diff-sign { text-align: center; user-select: none; }
+.diff-content { padding-right: 16px; }
+.diff-add { background: rgba(46, 160, 67, .16); }
+.diff-add .diff-sign { color: #3fb950; }
+.diff-remove { background: rgba(248, 81, 73, .16); }
+.diff-remove .diff-sign { color: #f85149; }
+.diff-context { background: transparent; }
+.diff-hunk {
+  padding: 4px 12px; color: #58a6ff;
+  background: rgba(56, 139, 253, .10);
+  border-top: 1px solid rgba(56, 139, 253, .12);
+  border-bottom: 1px solid rgba(56, 139, 253, .12);
+}
+.diff-file { padding: 5px 12px; color: var(--muted); }
 @media (max-width: 560px) {
   .wrap { padding: 16px 12px 48px; }
   .meta-grid { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
@@ -715,6 +808,46 @@ async function renderFileItem(f: { kind: "file"; mime?: string; filename?: strin
   return `<div class="file-row"><span>${label}${f.mime ? ` · ${escapeHtml(f.mime)}` : ""}</span></div>`
 }
 
+function parseUnifiedDiff(diff: string): string {
+  const lines = diff.split("\n")
+  const html: string[] = []
+  for (const line of lines) {
+    if (line.startsWith("@@")) {
+      html.push(`<div class="diff-hunk">${escapeHtml(line)}</div>`)
+      continue
+    }
+    if (line.startsWith("+++ ") || line.startsWith("--- ")) {
+      html.push(`<div class="diff-file">${escapeHtml(line)}</div>`)
+      continue
+    }
+    if (line.startsWith("+")) {
+      html.push(
+        `<div class="diff-line diff-add"><span class="diff-sign">+</span><span class="diff-content">${escapeHtml(line.slice(1))}</span></div>`,
+      )
+      continue
+    }
+    if (line.startsWith("-")) {
+      html.push(
+        `<div class="diff-line diff-remove"><span class="diff-sign">−</span><span class="diff-content">${escapeHtml(line.slice(1))}</span></div>`,
+      )
+      continue
+    }
+    html.push(`<div class="diff-line diff-context"><span class="diff-sign"> </span><span class="diff-content">${escapeHtml(line)}</span></div>`)
+  }
+  return html.join("")
+}
+
+function synthesizeWriteDiff(filePath: string, content: string): string {
+  const norm = content.replace(/\r/g, "").split("\n")
+  if (norm.length && norm[norm.length - 1] === "") norm.pop()
+  return (
+    `--- a/${filePath}\n` +
+    `+++ b/${filePath}\n` +
+    `@@ -0,0 +1,${norm.length} @@\n` +
+    norm.map((l) => `+${l}`).join("\n")
+  )
+}
+
 async function renderConversation(conv: Conversation, opts: ExportOptions, cwd: string): Promise<string> {
   let uniq = 0
   const blocks: string[] = []
@@ -734,6 +867,33 @@ async function renderConversation(conv: Conversation, opts: ExportOptions, cwd: 
         items.push(`<details class="reasoning"><summary>Reasoning</summary><div class="markdown">${it.html}</div></details>`)
       } else if (it.kind === "tool") {
         const t = it
+        const isFileDiff = (t.tool === "edit" || t.tool === "apply_patch") && t.diff !== undefined
+        const isWrite = t.tool === "write" && t.content !== undefined
+        if (isFileDiff || isWrite) {
+          const file = t.filePath || t.title || "file"
+          const diff = isWrite ? synthesizeWriteDiff(file, t.content as string) : (t.diff as string)
+          const dur = t.start && t.end ? formatDur(t.end - t.start) : ""
+          const statusLabel = t.status === "error" ? "error" : t.status === "completed" ? "completed" : t.status
+          const statusClass = ["completed", "error", "running", "pending"].includes(t.status) ? t.status : "running"
+          let extra = ""
+          if (t.status === "error") {
+            extra = `<details class="tool-error"><summary>Show error</summary><pre>${escapeHtml(t.error ?? t.output ?? "")}</pre></details>`
+          } else if (t.output != null && t.output !== "") {
+            const oh = await highlightPlainAsync(t.output)
+            const id = `output-${uniq++}`
+            extra = `<div class="tool-row"><div class="tool-lbl">Output</div><div class="codewrap"><button class="copy-btn" type="button" data-target="${id}">Copy</button><pre class="output" id="${id}">${oh}</pre></div></div>`
+          }
+          items.push(
+            `<details class="toolcard"><summary><span class="tool-arrow">▸</span>` +
+              `<span class="tool-name">${escapeHtml(t.tool)}</span><span class="tool-cmd">${escapeHtml(file)}</span>` +
+              `<span class="tool-meta">${dur ? `${dur} · ` : ""}<span class="tool-status ${statusClass}">${escapeHtml(statusLabel)}</span></span></summary>` +
+              `<div class="tool-body"><div class="edit-diff">` +
+              `<div class="edit-diff-header"><span class="edit-icon">✎</span><span class="edit-tool">${escapeHtml(t.tool)}</span><span class="edit-file">${escapeHtml(file)}</span></div>` +
+              `<div class="diff">${parseUnifiedDiff(diff)}</div>` +
+              `</div>${extra}</div></details>`,
+          )
+          continue
+        }
         const dur = t.start && t.end ? formatDur(t.end - t.start) : ""
         const statusLabel = t.status === "error" ? "error" : t.status === "completed" ? "completed" : t.status
         const statusClass = ["completed", "error", "running", "pending"].includes(t.status) ? t.status : "running"

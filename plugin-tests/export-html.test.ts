@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   applyRedaction,
   escapeHtml,
+  isExportHtmlPrompt,
   loadConversation,
   markdownToHtml,
   renderDocument,
@@ -12,6 +13,9 @@ import {
 } from "../plugins/export-html.ts"
 import basicFixture from "./fixtures/basic.json"
 import shortFixture from "./fixtures/short.json"
+import editFixture from "./fixtures/edit.json"
+import writeFixture from "./fixtures/write.json"
+import selfExportFixture from "./fixtures/self-export.json"
 
 function count(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1
@@ -182,6 +186,71 @@ describe("loadConversation", () => {
     expect(onText).not.toContain("gho_abcdefghijklmnopqrstuvwxyz1234567890")
     expect(offText).toContain("sk-123456789012345678901234567890")
   })
+
+  test("edit fixture: diff and filePath captured from tool state metadata", async () => {
+    const conv = await loadConversation((editFixture as any).session, (editFixture as any).messages, { redact: true })
+    const tool = conv.messages.flatMap((m) => m.items).find((i) => i.kind === "tool")
+    expect(tool?.kind).toBe("tool")
+    if (tool?.kind === "tool") {
+      expect(tool.tool).toBe("edit")
+      expect(tool.filePath).toBe("/tmp/proj/app/Http/Controllers/TrackingController.php")
+      expect(tool.diff).toContain("@@ -895,8 +895,9 @@")
+      expect(tool.diff).toContain("-  data-jf=\"${value.jf_no}\"")
+      expect(tool.diff).toContain("+  data-bs-target=\"#sendDocumentModal\"")
+    }
+  })
+
+  test("write fixture: content and filePath captured, input replaced by path", async () => {
+    const conv = await loadConversation((writeFixture as any).session, (writeFixture as any).messages, { redact: true })
+    const tool = conv.messages.flatMap((m) => m.items).find((i) => i.kind === "tool")
+    expect(tool?.kind).toBe("tool")
+    if (tool?.kind === "tool") {
+      expect(tool.tool).toBe("write")
+      expect(tool.filePath).toBe("/tmp/proj/src/track.js")
+      expect(tool.content).toContain('const url = "https://example.com?s=api&k=1"')
+      expect(tool.content).toContain("<script>alert(1)</script>")
+      expect(tool.input).toBe("/tmp/proj/src/track.js")
+      expect(tool.input).not.toBe(JSON.stringify((writeFixture as any).messages[1].parts[1].state.input))
+    }
+  })
+
+  test("self-export fixture: /export-html prompt and export_html tool stripped", async () => {
+    const conv = await loadConversation((selfExportFixture as any).session, (selfExportFixture as any).messages, { redact: true })
+    expect(conv.stats.messages).toBe(2)
+    expect(conv.stats.tools).toBe(0)
+    expect(conv.stats.errors).toBe(0)
+    const texts = conv.messages.map((m) => m.items.map((i) => i.kind === "text" ? String((i as any).html ?? "") : "").join(" "))
+    expect(texts.join(" ")).toContain("Normal question about the layout.")
+    expect(texts.join(" ")).toContain("The header uses flexbox")
+    expect(texts.join(" ")).not.toContain("export_html")
+    expect(texts.join(" ")).not.toContain("offline-portable HTML report")
+    expect(conv.messages.some((m) => m.items.some((i) => i.kind === "tool"))).toBe(false)
+  })
+
+  test("assistant turn with only an export_html tool call is dropped entirely", async () => {
+    const session = (selfExportFixture as any).session
+    const messages = [
+      {
+        info: (selfExportFixture as any).messages[1].info,
+        parts: (selfExportFixture as any).messages[1].parts,
+      },
+    ]
+    const conv = await loadConversation(session, messages, { redact: true })
+    expect(conv.messages).toHaveLength(0)
+  })
+})
+
+describe("isExportHtmlPrompt", () => {
+  test("matches the slash-command template, ignores plain user text", () => {
+    const cmd = (selfExportFixture as any).messages[0].parts[0].text as string
+    expect(isExportHtmlPrompt(cmd, "user")).toBe(true)
+    expect(isExportHtmlPrompt("Export the current conversation to a single-file, offline-portable HTML report using the `export_html` tool.", "user")).toBe(true)
+    expect(isExportHtmlPrompt("offline-portable HTML report using the `export_html` tool.", "user")).toBe(true)
+    expect(isExportHtmlPrompt("Normal question about the layout.", "user")).toBe(false)
+    expect(isExportHtmlPrompt("Export the conversation to a PDF.", "user")).toBe(false)
+    expect(isExportHtmlPrompt(cmd, "assistant")).toBe(false)
+    expect(isExportHtmlPrompt("", "user")).toBe(false)
+  })
 })
 
 describe("renderDocument", () => {
@@ -234,6 +303,53 @@ describe("renderDocument", () => {
     expect(auto).not.toContain("data-theme-initial=")
   })
 
+  test("edit tool rendered as diff instead of generic input card", async () => {
+    const conv = await loadConversation((editFixture as any).session, (editFixture as any).messages, { redact: true })
+    const doc = await renderDocument(conv, {}, "/tmp/proj")
+
+    expect(doc).toContain('class="edit-diff"')
+    expect(doc).toContain('class="diff-hunk"')
+    expect(doc).toContain("@@ -895,8 +895,9 @@")
+    expect(doc).toContain("diff-add")
+    expect(doc).not.toContain('data-bs-target="#sendDocumentModal"')
+    expect(doc).toContain("data-bs-target=&quot;#sendDocumentModal&quot;")
+    expect(doc).toContain("diff-remove")
+    expect(doc).toContain('edit-file">/tmp/proj/app/Http/Controllers/TrackingController.php')
+
+    expect(doc).not.toContain("script>alert(")
+    expect(doc).not.toContain("<script>alert")
+    expect(doc).not.toContain(">Input</div>")
+  })
+
+  test("edit and write diff cards collapsed by default", async () => {
+    const editConv = await loadConversation((editFixture as any).session, (editFixture as any).messages, { redact: true })
+    const writeConv = await loadConversation((writeFixture as any).session, (writeFixture as any).messages, { redact: true })
+    const [editDoc, writeDoc] = await Promise.all([
+      renderDocument(editConv, {}, "/tmp/proj"),
+      renderDocument(writeConv, {}, "/tmp/proj"),
+    ])
+    expect(editDoc).not.toContain("class=\"toolcard\" open>")
+    expect(writeDoc).not.toContain("class=\"toolcard\" open>")
+    expect(count(editDoc, "<details class=\"toolcard\">")).toBe(1)
+    expect(count(writeDoc, "<details class=\"toolcard\">")).toBe(1)
+  })
+
+  test("write tool rendered as all-lines-added diff, no raw input dump", async () => {
+    const conv = await loadConversation((writeFixture as any).session, (writeFixture as any).messages, { redact: true })
+    const doc = await renderDocument(conv, {}, "/tmp/proj")
+
+    expect(doc).toContain('class="edit-diff"')
+    expect(doc).toContain('edit-file">/tmp/proj/src/track.js')
+    expect(doc).toContain('class="diff-hunk"')
+    expect(doc).toContain("@@ -0,0 +1,4 @@")
+    expect(count(doc, "diff-add")).toBeGreaterThanOrEqual(4)
+    expect(doc).toContain('diff-sign">+</span>')
+    expect(doc).toContain('<pre class="output"')
+    expect(doc).not.toContain(">Input</div>")
+    expect(doc).not.toContain("<script>alert(1)")
+    expect(doc).toContain("&lt;script&gt;alert(1)&lt;/script&gt;")
+  })
+
   test("redaction banner present when values were hidden", async () => {
     const conv = await loadConversation((basicFixture as any).session, (basicFixture as any).messages, { redact: true })
     const doc = await renderDocument(conv, {}, "/tmp/proj")
@@ -243,6 +359,16 @@ describe("renderDocument", () => {
     const raw = await loadConversation((basicFixture as any).session, (basicFixture as any).messages, { redact: false })
     const docRaw = await renderDocument(raw, { redact: false }, "/tmp/proj")
     expect(docRaw).not.toContain('class="redact-banner"')
+  })
+
+  test("self-export session renders without the /export-html invocation", async () => {
+    const conv = await loadConversation((selfExportFixture as any).session, (selfExportFixture as any).messages, { redact: true })
+    const doc = await renderDocument(conv, {}, "/tmp/proj")
+    expect(doc).toContain("Normal question about the layout.")
+    expect(doc).toContain("The header uses flexbox")
+    expect(doc).not.toContain("HTML export complete")
+    expect(doc).not.toContain("offline-portable HTML report")
+    expect(doc).not.toContain("self-export-exclusion-1700003005.html")
   })
 })
 

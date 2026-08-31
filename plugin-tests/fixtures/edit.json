@@ -1,0 +1,79 @@
+{
+  "session": {
+    "id": "ses_test_0003",
+    "projectID": "proj_test",
+    "directory": "/tmp/proj",
+    "title": "Edit diff rendering",
+    "model": "{\"id\":\"claude-sonnet-4-6\",\"providerID\":\"anthropic\"}",
+    "agent": "build",
+    "time": { "created": 1700002000000, "updated": 1700002010000 },
+    "tokens": { "input": 1000, "output": 300, "reasoning": 0, "cache": { "read": 0, "write": 0 } },
+    "cost": 0
+  },
+  "messages": [
+    {
+      "info": {
+        "id": "msg_e1",
+        "sessionID": "ses_test_0003",
+        "role": "user",
+        "time": { "created": 1700002000000 },
+        "modelID": "default",
+        "providerID": "opencode",
+        "mode": "build",
+        "agent": "build",
+        "path": { "cwd": "/tmp/proj", "root": "/tmp" },
+        "cost": 0,
+        "tokens": { "input": 0, "output": 0, "reasoning": 0, "cache": { "read": 0, "write": 0 } }
+      },
+      "parts": [
+        {
+          "id": "prt_e1",
+          "messageID": "msg_e1",
+          "type": "text",
+          "text": "Add a modal trigger to the button.",
+          "time": { "start": 1700002000000, "end": 1700002000100 }
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_e2",
+        "sessionID": "ses_test_0003",
+        "role": "assistant",
+        "time": { "created": 1700002001000, "completed": 1700002009000 },
+        "modelID": "claude-sonnet-4-6",
+        "providerID": "anthropic",
+        "mode": "build",
+        "agent": "build",
+        "path": { "cwd": "/tmp/proj", "root": "/tmp" },
+        "cost": 0,
+        "tokens": { "input": 1000, "output": 300, "reasoning": 0, "cache": { "read": 0, "write": 0 } },
+        "finish": "done"
+      },
+      "parts": [
+        { "id": "prt_e2s", "messageID": "msg_e2", "type": "step-start" },
+        {
+          "id": "prt_e2t",
+          "messageID": "msg_e2",
+          "type": "tool",
+          "tool": "edit",
+          "callID": "call_edit_001",
+          "state": {
+            "status": "completed",
+            "input": {
+              "filePath": "/tmp/proj/app/Http/Controllers/TrackingController.php",
+              "oldString": "data-jf=\"${value.jf_no}\"",
+              "newString": "data-bs-toggle=\"modal\" data-bs-target=\"#sendDocumentModal\""
+            },
+            "title": "/tmp/proj/app/Http/Controllers/TrackingController.php",
+            "metadata": {
+              "diff": "--- a/app/Http/Controllers/TrackingController.php\n+++ b/app/Http/Controllers/TrackingController.php\n@@ -895,8 +895,9 @@\n <div class=\"record-wrapper\">\n <button class=\"btn\">\n-  data-jf=\"${value.jf_no}\"\n+  data-bs-toggle=\"modal\"\n+  data-bs-target=\"#sendDocumentModal\"\n   <span>Done</span>\n-  const s = \"<script>alert(1)</script>\";\n eof\n"
+            },
+            "time": { "start": 1700002002000, "end": 1700002008000 }
+          }
+        },
+        { "id": "prt_e2f", "messageID": "msg_e2", "type": "step-finish", "tokens": { "input": 1000, "output": 300 }, "cost": 0 }
+      ]
+    }
+  ]
+}

@@ -8,6 +8,7 @@ An [OpenCode](https://opencode.ai) plugin that exports the current conversation 
 - **Chat transcript** — user/assistant messages, tool calls, and reasoning (thinking) blocks rendered for review and learning.
 - **Code highlighting** — code blocks are syntax-highlighted.
 - **Redaction (on by default)** — obvious secrets (API keys, tokens, `{env:VAR}` refs) are redacted before export.
+- **Self-exclusion** — `/export-html` invocations (the command prompt and `export_html` tool calls) are stripped from the report, so exports never contain themselves.
 - **Themes** — `light`, `dark`, or `auto`.
 
 ## Install

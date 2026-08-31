@@ -1,0 +1,114 @@
+{
+  "session": {
+    "id": "ses_test_0005",
+    "projectID": "proj_test",
+    "directory": "/tmp/proj",
+    "title": "Self-export exclusion",
+    "model": "{\"id\":\"enlog\",\"providerID\":\"9router\"}",
+    "agent": "build",
+    "time": { "created": 1700003000000, "updated": 1700003010000 },
+    "tokens": { "input": 1000, "output": 300, "reasoning": 0, "cache": { "read": 0, "write": 0 } },
+    "cost": 0
+  },
+  "messages": [
+    {
+      "info": {
+        "id": "msg_s1",
+        "sessionID": "ses_test_0005",
+        "role": "user",
+        "time": { "created": 1700003000000 },
+        "modelID": "default",
+        "providerID": "opencode",
+        "mode": "build",
+        "agent": "build",
+        "path": { "cwd": "/tmp/proj", "root": "/tmp" },
+        "cost": 0,
+        "tokens": { "input": 0, "output": 0, "reasoning": 0, "cache": { "read": 0, "write": 0 } }
+      },
+      "parts": [
+        {
+          "id": "prt_s1",
+          "messageID": "msg_s1",
+          "type": "text",
+          "text": "Export the current conversation to a single-file, offline-portable HTML report using the `export_html` tool.\n\nMap these --theme dark to the tool parameters where present:\n- `--theme dark|light|auto`  ->  theme\n\nThe `export_html` tool already knows the current session and computes a sensible default output path (`./exports/<title>-<timestamp>.html`). Do not invent session IDs or file paths. After the tool runs, reply with the absolute path of the generated file and the export stats it returns."
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_s2",
+        "sessionID": "ses_test_0005",
+        "role": "assistant",
+        "time": { "created": 1700003001000, "completed": 1700003005000 },
+        "modelID": "enlog",
+        "providerID": "9router",
+        "mode": "build",
+        "agent": "build",
+        "path": { "cwd": "/tmp/proj", "root": "/tmp" },
+        "cost": 0,
+        "tokens": { "input": 500, "output": 50, "reasoning": 0, "cache": { "read": 0, "write": 0 } },
+        "finish": "done"
+      },
+      "parts": [
+        { "id": "prt_s2s", "messageID": "msg_s2", "type": "step-start" },
+        {
+          "id": "prt_s2t",
+          "messageID": "msg_s2",
+          "type": "tool",
+          "tool": "export_html",
+          "callID": "call_export_001",
+          "state": {
+            "status": "completed",
+            "input": { "theme": "dark", "title": "Self-export exclusion" },
+            "title": "HTML export complete",
+            "output": "Exported conversation \"Self-export exclusion\" to:\n/tmp/proj/exports/self-export-exclusion-1700003005.html\n\n3 messages · 1 tool calls · 0 errors · 44.2 KiB",
+            "time": { "start": 1700003002000, "end": 1700003004000 }
+          }
+        },
+        { "id": "prt_s2f", "messageID": "msg_s2", "type": "step-finish", "tokens": { "input": 500, "output": 50 }, "cost": 0 }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_s3",
+        "sessionID": "ses_test_0005",
+        "role": "user",
+        "time": { "created": 1700003006000 },
+        "modelID": "default",
+        "providerID": "opencode",
+        "mode": "build",
+        "agent": "build",
+        "path": { "cwd": "/tmp/proj", "root": "/tmp" },
+        "cost": 0,
+        "tokens": { "input": 0, "output": 0, "reasoning": 0, "cache": { "read": 0, "write": 0 } }
+      },
+      "parts": [
+        {
+          "id": "prt_s3",
+          "messageID": "msg_s3",
+          "type": "text",
+          "text": "Normal question about the layout."
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_s4",
+        "sessionID": "ses_test_0005",
+        "role": "assistant",
+        "time": { "created": 1700003007000, "completed": 1700003009000 },
+        "modelID": "enlog",
+        "providerID": "9router",
+        "mode": "build",
+        "agent": "build",
+        "path": { "cwd": "/tmp/proj", "root": "/tmp" },
+        "cost": 0,
+        "tokens": { "input": 500, "output": 30, "reasoning": 0, "cache": { "read": 0, "write": 0 } },
+        "finish": "done"
+      },
+      "parts": [
+        { "id": "prt_s4", "messageID": "msg_s4", "type": "text", "text": "The header uses flexbox with a 860px max-width wrap." }
+      ]
+    }
+  ]
+}
