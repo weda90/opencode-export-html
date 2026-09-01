@@ -1,0 +1,76 @@
+{
+  "session": {
+    "id": "ses_test_0004",
+    "projectID": "proj_test",
+    "directory": "/tmp/proj",
+    "title": "Write action rendering",
+    "model": "{\"id\":\"claude-sonnet-4-6\",\"providerID\":\"anthropic\"}",
+    "agent": "build",
+    "time": { "created": 1700003000000, "updated": 1700003010000 },
+    "tokens": { "input": 900, "output": 250, "reasoning": 0, "cache": { "read": 0, "write": 0 } },
+    "cost": 0
+  },
+  "messages": [
+    {
+      "info": {
+        "id": "msg_w1",
+        "sessionID": "ses_test_0004",
+        "role": "user",
+        "time": { "created": 1700003000000 },
+        "modelID": "default",
+        "providerID": "opencode",
+        "mode": "build",
+        "agent": "build",
+        "path": { "cwd": "/tmp/proj", "root": "/tmp" },
+        "cost": 0,
+        "tokens": { "input": 0, "output": 0, "reasoning": 0, "cache": { "read": 0, "write": 0 } }
+      },
+      "parts": [
+        {
+          "id": "prt_w1",
+          "messageID": "msg_w1",
+          "type": "text",
+          "text": "Create a small script.",
+          "time": { "start": 1700003000000, "end": 1700003000100 }
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_w2",
+        "sessionID": "ses_test_0004",
+        "role": "assistant",
+        "time": { "created": 1700003001000, "completed": 1700003007000 },
+        "modelID": "claude-sonnet-4-6",
+        "providerID": "anthropic",
+        "mode": "build",
+        "agent": "build",
+        "path": { "cwd": "/tmp/proj", "root": "/tmp" },
+        "cost": 0,
+        "tokens": { "input": 900, "output": 250, "reasoning": 0, "cache": { "read": 0, "write": 0 } },
+        "finish": "done"
+      },
+      "parts": [
+        { "id": "prt_w2s", "messageID": "msg_w2", "type": "step-start" },
+        {
+          "id": "prt_w2t",
+          "messageID": "msg_w2",
+          "type": "tool",
+          "tool": "write",
+          "callID": "call_write_001",
+          "state": {
+            "status": "completed",
+            "input": {
+              "filePath": "/tmp/proj/src/track.js",
+              "content": "const url = \"https://example.com?s=api&k=1\";\nif (greet) {\n  console.log(`<script>alert(1)</script>`);\n}\n"
+            },
+            "output": "Wrote 96 bytes to /tmp/proj/src/track.js",
+            "title": "/tmp/proj/src/track.js",
+            "time": { "start": 1700003002000, "end": 1700003006000 }
+          }
+        },
+        { "id": "prt_w2f", "messageID": "msg_w2", "type": "step-finish", "tokens": { "input": 900, "output": 250 }, "cost": 0 }
+      ]
+    }
+  ]
+}

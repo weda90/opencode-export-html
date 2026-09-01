@@ -1,11 +1,9 @@
 ---
 description: Export this conversation to a single-file HTML report
-agent: build
 ---
 
-Export the current conversation to a single-file, offline-portable HTML report using the `export_html` tool.
+Call the `export_html` tool once to export this conversation to a single-file, offline-portable HTML report with these `$ARGUMENTS` mapped to its parameters, then reply with the absolute path and the export stats it returns.
 
-Map these `$ARGUMENTS` to the tool parameters where present:
 - `--output <path>`  ->  output
 - `--theme dark|light|auto`  ->  theme
 - `--include-reasoning`  ->  includeReasoning: true
@@ -13,4 +11,4 @@ Map these `$ARGUMENTS` to the tool parameters where present:
 - `--no-redact`  ->  redact: false
 - `--title <text>`  ->  title
 
-The `export_html` tool already knows the current session and computes a sensible default output path (`./exports/<title>-<timestamp>.html`). Do not invent session IDs or file paths. After the tool runs, reply with the absolute path of the generated file and the export stats it returns.
+Do not invent session IDs or file paths. The tool picks a sensible default output (`./exports/<title>-<timestamp>.html`) when `output` is omitted. Call the tool immediately, no preamble, no commentary.
