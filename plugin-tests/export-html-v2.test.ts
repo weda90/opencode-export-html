@@ -26,6 +26,9 @@ describe("export-html plugin V2 shape", () => {
           fn(editor)
         },
       },
+      command: {
+        transform: async (fn: any) => fn({ add: () => {} }),
+      },
     }
     await (mod as any).setup(ctx)
     const tool = added.find((t) => t.name === "export_html")

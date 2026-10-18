@@ -1,6 +1,7 @@
 import { Plugin } from "@opencode/plugin"
 import * as path from "node:path"
 import { promises as fs } from "node:fs"
+import { openReport } from "./open-report"
 
 /* ============================================================================
  * export_html — export the current opencode conversation to a single, portable,
@@ -26,6 +27,7 @@ export type ExportOptions = {
   includeFiles?: boolean
   redact?: boolean
   title?: string
+  open?: boolean
 }
 
 type SessionMeta = {
@@ -93,6 +95,108 @@ export function slugify(s: string): string {
     .replace(/^-+|-+$/g, "")
     .slice(0, 80)
   return slug || "session"
+}
+
+function tokenizeArgs(text: string): string[] {
+  const tokens: string[] = []
+  let current = ""
+  let quote: '"' | "'" | null = null
+  let started = false
+
+  for (const ch of text) {
+    if (quote) {
+      if (ch === quote) quote = null
+      else current += ch
+      continue
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch
+      started = true
+      continue
+    }
+    if (/\s/.test(ch)) {
+      if (started) {
+        tokens.push(current)
+        current = ""
+        started = false
+      }
+      continue
+    }
+    current += ch
+    started = true
+  }
+
+  if (quote) throw new Error("Unterminated quote in arguments")
+  if (started) tokens.push(current)
+  return tokens
+}
+
+export function parseExportArgs(text: string): ExportOptions {
+  const opts: ExportOptions = {}
+  const tokens = tokenizeArgs(text)
+
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]
+    if (!token.startsWith("--")) throw new Error(`Unexpected argument: ${token}`)
+
+    const eq = token.indexOf("=")
+    const name = eq >= 0 ? token.slice(0, eq) : token
+    const inline = eq >= 0 ? token.slice(eq + 1) : undefined
+
+    const readValue = () => {
+      if (inline !== undefined) {
+        if (inline === "") throw new Error(`Option ${name} requires a value`)
+        return inline
+      }
+      const next = tokens[++i]
+      if (next === undefined || next.startsWith("--")) throw new Error(`Option ${name} requires a value`)
+      return next
+    }
+    const noValue = () => {
+      if (inline !== undefined) throw new Error(`Option ${name} does not take a value`)
+    }
+
+    switch (name) {
+      case "--output":
+        opts.output = readValue()
+        break
+      case "--theme": {
+        const value = readValue()
+        if (value !== "dark" && value !== "light" && value !== "auto") {
+          throw new Error(`Invalid theme: ${value}`)
+        }
+        opts.theme = value
+        break
+      }
+      case "--include-reasoning":
+        noValue()
+        opts.includeReasoning = true
+        break
+      case "--no-include-files":
+        noValue()
+        opts.includeFiles = false
+        break
+      case "--no-redact":
+        noValue()
+        opts.redact = false
+        break
+      case "--open":
+        noValue()
+        opts.open = true
+        break
+      case "--no-open":
+        noValue()
+        opts.open = false
+        break
+      case "--title":
+        opts.title = readValue()
+        break
+      default:
+        throw new Error(`Unknown option: ${name}`)
+    }
+  }
+
+  return opts
 }
 
 function stamp(): string {
@@ -1242,11 +1346,68 @@ export function normalizeV2Messages(messages: any[]): Array<{ info: V2Info; part
   return out
 }
 
-async function exportCurrentSessionV2(
+let fullHistoryClient: any | undefined
+
+async function getFullHistoryClient() {
+  if (fullHistoryClient) return fullHistoryClient
+  const [{ discover }, { OpenCode }] = await Promise.all([
+    import("@opencode/client/service"),
+    import("@opencode/client"),
+  ])
+  const endpoint = await discover()
+  if (!endpoint) throw new Error("OpenCode local service not found")
+  const headers = endpoint.auth
+    ? {
+        authorization: `Basic ${Buffer.from(`${endpoint.auth.username}:${endpoint.auth.password}`).toString("base64")}`,
+      }
+    : undefined
+  fullHistoryClient = OpenCode.make({ baseUrl: endpoint.url, headers })
+  return fullHistoryClient
+}
+
+async function fetchFullHistory(sessionID: string): Promise<any[]> {
+  const client = await getFullHistoryClient()
+  const messages: any[] = []
+  const seen = new Set<string>()
+  let cursor: string | undefined
+  for (let page = 0; page < 100; page++) {
+    const result = await client.message.list({
+      sessionID,
+      limit: 200,
+      ...(cursor ? { cursor } : { order: "asc" }),
+    })
+    const data = result.data ?? []
+    messages.push(...data)
+    const next = result.cursor?.next
+    if (!next || data.length === 0 || seen.has(next)) break
+    seen.add(next)
+    cursor = next
+  }
+  return messages
+}
+
+export async function resolveSessionMessages(
+  ctx: any,
+  sessionID: string,
+  fullHistory?: (sessionID: string) => Promise<any[]>,
+): Promise<any[]> {
+  const context = await ctx.session.context({ sessionID })
+  const compacted = (context ?? []).some((message: any) => message?.type === "compaction")
+  if (!compacted) return context
+  try {
+    return await (fullHistory ?? fetchFullHistory)(sessionID)
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    throw new Error(`Cannot read the full session transcript after compaction: ${reason}`)
+  }
+}
+
+export async function exportCurrentSessionV2(
   ctx: any,
   sessionID: string,
   opts: ExportOptions,
   signal?: AbortSignal,
+  fullHistory?: (sessionID: string) => Promise<any[]>,
 ): Promise<{ file: string; htmlSize: number; conversation: Conversation }> {
   const check = () => {
     if (signal?.aborted) throw new DOMException("Export aborted", "AbortError")
@@ -1255,7 +1416,7 @@ async function exportCurrentSessionV2(
   check()
   const session = await ctx.session.get({ sessionID })
   check()
-  const rawMessages = await ctx.session.context({ sessionID })
+  const rawMessages = await resolveSessionMessages(ctx, sessionID, fullHistory)
 
   const cwd = ctx.location?.directory || process.cwd()
   const sessionForMeta = { ...(session ?? {}), id: session?.id ?? sessionID, directory: session?.directory ?? cwd }
@@ -1268,6 +1429,26 @@ async function exportCurrentSessionV2(
   await fs.mkdir(path.dirname(file), { recursive: true })
   await fs.writeFile(file, html, "utf-8")
   return { file, htmlSize: Buffer.byteLength(html), conversation }
+}
+
+const EXPORT_STATUS_FILE = ".export-session.json"
+
+type ExportStatus =
+  | { status: "running"; started: number }
+  | { status: "done"; started: number; file: string; messages?: number; tools?: number }
+  | { status: "error"; started: number; message: string }
+
+async function writeExportStatus(cwd: string, status: ExportStatus): Promise<void> {
+  try {
+    const directory = path.join(cwd, "exports")
+    await fs.mkdir(directory, { recursive: true })
+    const file = path.join(directory, EXPORT_STATUS_FILE)
+    const temporary = `${file}.tmp`
+    await fs.writeFile(temporary, JSON.stringify(status), "utf-8")
+    await fs.rename(temporary, file)
+  } catch {
+    // Status is only for TUI feedback; never block the export.
+  }
 }
 
 /* -------------------------- 8. plugin export ------------------------------ */
@@ -1315,6 +1496,35 @@ export default Plugin.define({
           return {
             content: text,
             metadata: { file, size: htmlSize, messages: s.messages, tools: s.tools, errors: s.errors, redactions: s.redactions },
+          }
+        },
+      })
+    })
+
+    await ctx.command.transform((editor) => {
+      editor.add({
+        name: "export-session",
+        description:
+          "Export this conversation to a single-file HTML report immediately, without prompting the model or appending to the session.",
+        async execute({ sessionID, prompt }) {
+          const cwd = ctx.location?.directory || process.cwd()
+          const started = Date.now()
+          try {
+            const opts = parseExportArgs(prompt.text)
+            await writeExportStatus(cwd, { status: "running", started })
+            const { file, conversation } = await exportCurrentSessionV2(ctx, sessionID, opts)
+            await writeExportStatus(cwd, {
+              status: "done",
+              started,
+              file,
+              messages: conversation.stats.messages,
+              tools: conversation.stats.tools,
+            })
+            if (opts.open !== false) openReport(file)
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error)
+            await writeExportStatus(cwd, { status: "error", started, message })
+            throw error
           }
         },
       })
