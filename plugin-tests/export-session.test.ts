@@ -57,6 +57,22 @@ describe("parseExportArgs", () => {
     expect(() => parseExportArgs("--title")).toThrow(/requires a value/)
   })
 
+  test("rejects a following flag as a value", () => {
+    expect(() => parseExportArgs("--title --no-redact")).toThrow(/requires a value/)
+    expect(() => parseExportArgs("--output --wat")).toThrow(/requires a value/)
+    expect(() => parseExportArgs("--title --theme dark")).toThrow(/requires a value/)
+  })
+
+  test("allows a literal value starting with dashes via equals", () => {
+    expect(parseExportArgs("--title=--literal")).toEqual({ title: "--literal" })
+  })
+
+  test("rejects empty values", () => {
+    expect(() => parseExportArgs("--output=")).toThrow(/requires a value/)
+    expect(() => parseExportArgs("--title=")).toThrow(/requires a value/)
+    expect(() => parseExportArgs("--theme=")).toThrow(/requires a value/)
+  })
+
   test("rejects bare arguments", () => {
     expect(() => parseExportArgs("hello")).toThrow(/Unexpected argument/)
   })

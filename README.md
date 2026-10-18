@@ -45,8 +45,8 @@ Add it to the `plugins` array in `~/.config/opencode/opencode.jsonc`:
 
 ## Usage
 
-The plugin registers a direct command, a legacy prompt command, and an
-`export_html` tool.
+The plugin registers a direct command and an `export_html` tool. The legacy
+`/export-html` prompt command is a separate optional install.
 
 ### `/export-session` (direct, nothing appended)
 
@@ -88,9 +88,9 @@ Then:
 /export-html
 ```
 
-The `export_html` tool remains available to the model and accepts the same
-options. Default output is `./exports/<title>-<timestamp>.html`, or whichever
-path the tool caller provides.
+The `export_html` tool remains available to the model with the same options as
+JSON tool inputs. Default output is `./exports/<title>-<timestamp>.html`, or
+whichever path the tool caller provides.
 
 ## Development
 

@@ -142,9 +142,12 @@ export function parseExportArgs(text: string): ExportOptions {
     const inline = eq >= 0 ? token.slice(eq + 1) : undefined
 
     const readValue = () => {
-      if (inline !== undefined) return inline
+      if (inline !== undefined) {
+        if (inline === "") throw new Error(`Option ${name} requires a value`)
+        return inline
+      }
       const next = tokens[++i]
-      if (next === undefined) throw new Error(`Option ${name} requires a value`)
+      if (next === undefined || next.startsWith("--")) throw new Error(`Option ${name} requires a value`)
       return next
     }
     const noValue = () => {
