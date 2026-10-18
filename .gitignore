@@ -3,3 +3,5 @@ exports/
 dist/
 *.log
 temp/
+docs/
+.DS_Store
