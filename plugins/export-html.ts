@@ -95,6 +95,97 @@ export function slugify(s: string): string {
   return slug || "session"
 }
 
+function tokenizeArgs(text: string): string[] {
+  const tokens: string[] = []
+  let current = ""
+  let quote: '"' | "'" | null = null
+  let started = false
+
+  for (const ch of text) {
+    if (quote) {
+      if (ch === quote) quote = null
+      else current += ch
+      continue
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch
+      started = true
+      continue
+    }
+    if (/\s/.test(ch)) {
+      if (started) {
+        tokens.push(current)
+        current = ""
+        started = false
+      }
+      continue
+    }
+    current += ch
+    started = true
+  }
+
+  if (quote) throw new Error("Unterminated quote in arguments")
+  if (started) tokens.push(current)
+  return tokens
+}
+
+export function parseExportArgs(text: string): ExportOptions {
+  const opts: ExportOptions = {}
+  const tokens = tokenizeArgs(text)
+
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]
+    if (!token.startsWith("--")) throw new Error(`Unexpected argument: ${token}`)
+
+    const eq = token.indexOf("=")
+    const name = eq >= 0 ? token.slice(0, eq) : token
+    const inline = eq >= 0 ? token.slice(eq + 1) : undefined
+
+    const readValue = () => {
+      if (inline !== undefined) return inline
+      const next = tokens[++i]
+      if (next === undefined) throw new Error(`Option ${name} requires a value`)
+      return next
+    }
+    const noValue = () => {
+      if (inline !== undefined) throw new Error(`Option ${name} does not take a value`)
+    }
+
+    switch (name) {
+      case "--output":
+        opts.output = readValue()
+        break
+      case "--theme": {
+        const value = readValue()
+        if (value !== "dark" && value !== "light" && value !== "auto") {
+          throw new Error(`Invalid theme: ${value}`)
+        }
+        opts.theme = value
+        break
+      }
+      case "--include-reasoning":
+        noValue()
+        opts.includeReasoning = true
+        break
+      case "--no-include-files":
+        noValue()
+        opts.includeFiles = false
+        break
+      case "--no-redact":
+        noValue()
+        opts.redact = false
+        break
+      case "--title":
+        opts.title = readValue()
+        break
+      default:
+        throw new Error(`Unknown option: ${name}`)
+    }
+  }
+
+  return opts
+}
+
 function stamp(): string {
   const d = new Date()
   const p = (n: number, l = 2) => String(n).padStart(l, "0")
