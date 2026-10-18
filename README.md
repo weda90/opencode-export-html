@@ -87,6 +87,7 @@ plugins/export-html.ts               # the plugin
 plugin-tests/export-html.test.ts     # core + diff + self-exclusion
 plugin-tests/export-html-v2.test.ts  # V2 plugin shape
 plugin-tests/export-html-v2adapter.test.ts # V2 message adapter
+plugin-tests/export-html-v2-native.test.ts # V2-native tool payloads + attachments
 plugin-tests/fixtures/               # test fixtures
 command/export-html.md               # /export-html slash command
 ```

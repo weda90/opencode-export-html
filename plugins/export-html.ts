@@ -351,7 +351,6 @@ export async function loadConversation(
     const items: ItemRender[] = []
 
     const isExportTurn = parts.some((p) => p && p.type === "tool" && p.tool === "export_html")
-    if (isExportTurn) continue
 
     for (const part of parts) {
       const t = part?.type
@@ -368,23 +367,42 @@ export async function loadConversation(
             : inputRaw && typeof inputRaw === "object" && typeof (inputRaw as any).command === "string"
               ? rawText((inputRaw as any).command)
               : JSON.stringify(inputRaw ?? {}, null, 2)
+        const metaFiles = (st.metadata as any)?.files
+        const fileEntries: any[] = Array.isArray(metaFiles) ? metaFiles : []
+        const patchTexts = fileEntries
+          .map((f) => (typeof f?.patch === "string" ? String(f.patch) : ""))
+          .filter(Boolean)
         const diff =
           typeof (st.metadata as any)?.diff === "string"
             ? String((st.metadata as any).diff)
-            : typeof st.diff === "string"
-              ? String(st.diff)
-              : undefined
+            : patchTexts.length
+              ? patchTexts.join("\n")
+              : typeof st.diff === "string"
+                ? String(st.diff)
+                : undefined
+        const firstFile = fileEntries[0]
         const filePath =
-          inputRaw &&
-          typeof inputRaw === "object" &&
-          typeof (inputRaw as any).filePath === "string"
-            ? String((inputRaw as any).filePath)
-            : undefined
+          inputRaw && typeof inputRaw === "object" && typeof (inputRaw as any).path === "string"
+            ? String((inputRaw as any).path)
+            : inputRaw && typeof inputRaw === "object" && typeof (inputRaw as any).filePath === "string"
+              ? String((inputRaw as any).filePath)
+              : typeof (st.metadata as any)?.filepath === "string"
+                ? String((st.metadata as any).filepath)
+                : typeof firstFile?.file === "string"
+                  ? String(firstFile.file)
+                  : undefined
         const filediff = (st.metadata as any)?.filediff
+        const sumField = (field: "additions" | "deletions"): number | undefined => {
+          const total = fileEntries.reduce(
+            (n, f) => n + (typeof f?.[field] === "number" ? (f[field] as number) : 0),
+            0,
+          )
+          return total || undefined
+        }
         const additions =
-          typeof filediff?.additions === "number" ? (filediff.additions as number) : undefined
+          typeof filediff?.additions === "number" ? (filediff.additions as number) : sumField("additions")
         const deletions =
-          typeof filediff?.deletions === "number" ? (filediff.deletions as number) : undefined
+          typeof filediff?.deletions === "number" ? (filediff.deletions as number) : sumField("deletions")
         const content =
           inputRaw &&
           typeof inputRaw === "object" &&
@@ -424,6 +442,7 @@ export async function loadConversation(
           mime: a.mime || "application/octet-stream",
           filename: a.filename,
           url: a.url,
+          dataUri: a.dataUri,
         }))
         if (status !== "pending") statTools++
         if (status === "error") statErrors++
@@ -452,7 +471,13 @@ export async function loadConversation(
           items.push({ kind: "reasoning", html: await markdownToHtml(rt.text) })
         }
       } else if (t === "file" || t === "image") {
-        items.push({ kind: "file", mime: part.mime, filename: part.filename, url: part.url })
+        items.push({
+          kind: "file",
+          mime: part.mime,
+          filename: part.filename ?? part.name,
+          url: part.url,
+          dataUri: part.dataUri,
+        })
       } else if (t === "text") {
         if (part.synthetic || part.ignored) continue
         const ttRaw = rawText(part.text)
@@ -461,6 +486,7 @@ export async function loadConversation(
         redactions += tt.count
         items.push({ kind: "text", role: info.role || "assistant", html: await markdownToHtml(tt.text) })
       } else if (t === "step-finish") {
+        if (isExportTurn) continue
         const tk = part.tokens ?? {}
         const line = [`step: ${formatTokens(tk.output)} out / ${formatTokens(tk.input)} in`]
         if (part.cost) line.push(formatCost(part.cost))
@@ -777,7 +803,9 @@ function themeSvg(): string {
 
 function renderMeta(conv: Conversation, opts: ExportOptions): string {
   const { meta, stats } = conv
-  const model = meta.model ? `${meta.model.providerID}/${meta.model.id}` + (meta.model.variant ? ` (${meta.model.variant})` : "") : "—"
+  const model = meta.model
+    ? escapeHtml(`${meta.model.providerID}/${meta.model.id}`) + (meta.model.variant ? ` (${escapeHtml(meta.model.variant)})` : "")
+    : "—"
   const durMs = meta.updated - meta.created
   const rows: Array<[string, string]> = [
     ["Model", model],
@@ -832,9 +860,9 @@ async function fileToDataUri(url: string, cwd: string): Promise<string | undefin
 
 async function renderFileItem(f: { kind: "file"; mime?: string; filename?: string; dataUri?: string; url?: string }, opts: ExportOptions, cwd: string): Promise<string> {
   const name = f.filename || f.url || "attachment"
-  if (f.mime?.startsWith("image/") && f.url && opts.includeFiles !== false) {
-    const dataUri = await fileToDataUri(f.url, cwd)
-    if (dataUri) return `<div class="file-row"><img src="${dataUri}" alt="${escapeHtml(name)}" loading="lazy"></div>`
+  if (f.mime?.startsWith("image/") && opts.includeFiles !== false) {
+    const src = f.dataUri ?? (f.url ? await fileToDataUri(f.url, cwd) : undefined)
+    if (src) return `<div class="file-row"><img src="${src}" alt="${escapeHtml(name)}" loading="lazy"></div>`
   }
   const href = f.url?.startsWith("http") ? f.url : undefined
   const label = href ? `<a href="${escapeHtml(href)}">${escapeHtml(name)}</a>` : escapeHtml(name)
@@ -1117,25 +1145,50 @@ function resolveOutput(opts: ExportOptions, cwd: string, meta: SessionMeta): str
 type V2Part = { type: string; [k: string]: any }
 type V2Info = { role: string; [k: string]: any }
 
-function toolStateToLegacy(name: string, st: any): { tool: string; state: any } {
+function v2File(f: any): FileRender {
+  const mime = f?.mime
+  const dataUri = typeof f?.data === "string" && mime ? `data:${mime};base64,${f.data}` : undefined
+  return {
+    kind: "file",
+    mime,
+    filename: f?.name ?? f?.filename,
+    url: f?.source?.uri ?? f?.uri ?? f?.url,
+    dataUri,
+  }
+}
+
+function toolContent(st: any): { output: string; attachments: FileRender[] } {
+  const content = Array.isArray(st?.content) ? st.content : []
+  const attachments: FileRender[] = []
+  const lines: string[] = []
+  for (const c of content) {
+    if (c?.type === "text") lines.push(String(c.text ?? ""))
+    else if (c?.type === "file") attachments.push(v2File(c))
+    else lines.push(JSON.stringify(c ?? null))
+  }
+  return { output: lines.filter((line) => line !== "").join("\n"), attachments }
+}
+
+function toolStateToLegacy(name: string, st: any): { tool: string; state: any; attachments: FileRender[] } {
   const status = st?.status
+  const { output, attachments } = toolContent(st)
   if (status === "completed") {
-    const content = Array.isArray(st.content) ? st.content : []
-    const output = content
-      .map((c: any) => (c?.type === "text" ? String(c.text ?? "") : JSON.stringify(c ?? null)))
-      .join("\n")
-    return { tool: name, state: { status, input: st.input ?? {}, output, title: st.title, metadata: st.metadata } }
+    return {
+      tool: name,
+      state: { status, input: st.input ?? {}, output, title: st.title, metadata: st.metadata, attachments },
+      attachments,
+    }
   }
   if (status === "error") {
     const err = st.error
     const message = typeof err === "string" ? err : (err?.data?.message ?? err?.message ?? JSON.stringify(err ?? null))
-    const content = Array.isArray(st.content) ? st.content : []
-    const output = content
-      .map((c: any) => (c?.type === "text" ? String(c.text ?? "") : JSON.stringify(c ?? null)))
-      .join("\n")
-    return { tool: name, state: { status, input: st.input ?? {}, error: message, output: output || undefined } }
+    return {
+      tool: name,
+      state: { status, input: st.input ?? {}, error: message, output: output || undefined, attachments },
+      attachments,
+    }
   }
-  return { tool: name, state: { status: "pending", input: st?.input ?? {} } }
+  return { tool: name, state: { status: "pending", input: st?.input ?? {}, attachments }, attachments }
 }
 
 export function normalizeV2Messages(messages: any[]): Array<{ info: V2Info; parts: V2Part[] }> {
@@ -1149,7 +1202,16 @@ export function normalizeV2Messages(messages: any[]): Array<{ info: V2Info; part
     }
     if (m.type === "user") {
       const parts: V2Part[] = [{ type: "text", text: String(m.text ?? "") }]
-      for (const f of m.files ?? []) parts.push({ type: "file", mime: f.mime, filename: f.filename, url: f.uri ?? f.url })
+      for (const f of m.files ?? []) {
+        const file = v2File(f)
+        parts.push({
+          type: "file",
+          mime: file.mime,
+          filename: file.filename,
+          url: file.url,
+          dataUri: file.dataUri,
+        })
+      }
       out.push({ info: { role: "user", time: m.time }, parts })
     } else if (m.type === "assistant") {
       const model = m.model ?? {}
@@ -1168,7 +1230,7 @@ export function normalizeV2Messages(messages: any[]): Array<{ info: V2Info; part
         else if (c?.type === "reasoning") parts.push({ type: "reasoning", text: String(c.text ?? "") })
         else if (c?.type === "tool") {
           const t = toolStateToLegacy(String(c.name ?? "tool"), c.state ?? {})
-          parts.push({ type: "tool", tool: t.tool, state: t.state, attachments: [] })
+          parts.push({ type: "tool", tool: t.tool, state: t.state, attachments: t.attachments })
         } else if (c) parts.push({ type: String(c.type ?? "unknown").replace(/-/g, " ") })
       }
       if (m.finish) parts.push({ type: "step-finish", tokens: m.tokens ?? {}, cost: m.cost })
