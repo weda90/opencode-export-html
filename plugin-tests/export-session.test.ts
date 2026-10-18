@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import * as path from "node:path"
-import mod, { parseExportArgs } from "../plugins/export-html.ts"
+import mod, { exportCurrentSessionV2, parseExportArgs, resolveSessionMessages } from "../plugins/export-html.ts"
 
 describe("parseExportArgs", () => {
   test("empty text returns defaults", () => {
@@ -166,5 +166,76 @@ describe("export-session command", () => {
       ).rejects.toThrow(/Unknown option/)
       await expect(readdir(path.join(dir, "exports"))).rejects.toThrow()
     })
+  })
+})
+
+describe("session history after compaction", () => {
+  const compaction = { type: "compaction", summary: "old context" }
+  const full = [
+    { info: { role: "user", time: { created: 1 } }, parts: [{ type: "text", text: "old user message" }] },
+    { info: { role: "assistant", time: { created: 2 } }, parts: [{ type: "text", text: "old assistant message" }] },
+  ]
+
+  test("uses the full history when the active context contains a compaction", async () => {
+    const ctx = { session: { context: async () => [compaction] } }
+    const messages = await resolveSessionMessages(ctx, "ses_demo", async () => full)
+    expect(messages).toBe(full)
+  })
+
+  test("uses the full history when a compaction is followed by new messages", async () => {
+    const ctx = { session: { context: async () => [compaction, { type: "user", text: "after" }] } }
+    const messages = await resolveSessionMessages(ctx, "ses_demo", async () => full)
+    expect(messages).toBe(full)
+  })
+
+  test("keeps the active context when it is not compacted", async () => {
+    const context = [{ type: "user", text: "hello" }]
+    let called = false
+    const ctx = { session: { context: async () => context } }
+    const messages = await resolveSessionMessages(ctx, "ses_demo", async () => {
+      called = true
+      return full
+    })
+    expect(messages).toBe(context)
+    expect(called).toBe(false)
+  })
+
+  test("reports an error instead of exporting an empty compacted transcript", async () => {
+    const ctx = { session: { context: async () => [compaction] } }
+    await expect(
+      resolveSessionMessages(ctx, "ses_demo", async () => {
+        throw new Error("offline")
+      }),
+    ).rejects.toThrow(/full session transcript/)
+  })
+
+  test("exports the full transcript when the active context is compacted", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "export-session-"))
+    const ctx: any = {
+      location: { directory: dir },
+      session: {
+        get: async () => ({
+          id: "ses_demo",
+          title: "Compacted Session",
+          directory: dir,
+          model: JSON.stringify({ id: "test-model", providerID: "test-provider" }),
+          agent: "build",
+          time: { created: 1, updated: 2 },
+          tokens: { input: 10, output: 20, reasoning: 0 },
+          cost: 0,
+        }),
+        context: async () => [compaction],
+      },
+    }
+    try {
+      const { conversation } = await exportCurrentSessionV2(ctx, "ses_demo", {}, undefined, async () => full)
+      expect(conversation.stats.messages).toBe(2)
+      const files = await readdir(path.join(dir, "exports"))
+      const html = await readFile(path.join(dir, "exports", files[0]), "utf-8")
+      expect(html).toContain("old user message")
+      expect(html).toContain("old assistant message")
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })

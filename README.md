@@ -10,6 +10,7 @@ An [OpenCode](https://opencode.ai) plugin that exports the current conversation 
 - **Code highlighting** — code blocks and tool output are syntax-highlighted.
 - **Redaction (on by default)** — obvious secrets (API keys, tokens, `{env:VAR}` refs) are redacted before export.
 - **Direct command** — `/export-session` exports immediately without a prompt, a model turn, or a session entry.
+- **Full history after compaction:** the exporter reads the stored transcript instead of only the active post-compaction context.
 - **Self-exclusion** — legacy `/export-html` invocations (the command prompt and `export_html` tool calls) are stripped from the report, so exports never contain themselves.
 - **Themes** — `light`, `dark`, or `auto`.
 

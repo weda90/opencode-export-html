@@ -1336,11 +1336,68 @@ export function normalizeV2Messages(messages: any[]): Array<{ info: V2Info; part
   return out
 }
 
-async function exportCurrentSessionV2(
+let fullHistoryClient: any | undefined
+
+async function getFullHistoryClient() {
+  if (fullHistoryClient) return fullHistoryClient
+  const [{ discover }, { OpenCode }] = await Promise.all([
+    import("@opencode/client/service"),
+    import("@opencode/client"),
+  ])
+  const endpoint = await discover()
+  if (!endpoint) throw new Error("OpenCode local service not found")
+  const headers = endpoint.auth
+    ? {
+        authorization: `Basic ${Buffer.from(`${endpoint.auth.username}:${endpoint.auth.password}`).toString("base64")}`,
+      }
+    : undefined
+  fullHistoryClient = OpenCode.make({ baseUrl: endpoint.url, headers })
+  return fullHistoryClient
+}
+
+async function fetchFullHistory(sessionID: string): Promise<any[]> {
+  const client = await getFullHistoryClient()
+  const messages: any[] = []
+  const seen = new Set<string>()
+  let cursor: string | undefined
+  for (let page = 0; page < 100; page++) {
+    const result = await client.message.list({
+      sessionID,
+      limit: 200,
+      ...(cursor ? { cursor } : { order: "asc" }),
+    })
+    const data = result.data ?? []
+    messages.push(...data)
+    const next = result.cursor?.next
+    if (!next || data.length === 0 || seen.has(next)) break
+    seen.add(next)
+    cursor = next
+  }
+  return messages
+}
+
+export async function resolveSessionMessages(
+  ctx: any,
+  sessionID: string,
+  fullHistory?: (sessionID: string) => Promise<any[]>,
+): Promise<any[]> {
+  const context = await ctx.session.context({ sessionID })
+  const compacted = (context ?? []).some((message: any) => message?.type === "compaction")
+  if (!compacted) return context
+  try {
+    return await (fullHistory ?? fetchFullHistory)(sessionID)
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    throw new Error(`Cannot read the full session transcript after compaction: ${reason}`)
+  }
+}
+
+export async function exportCurrentSessionV2(
   ctx: any,
   sessionID: string,
   opts: ExportOptions,
   signal?: AbortSignal,
+  fullHistory?: (sessionID: string) => Promise<any[]>,
 ): Promise<{ file: string; htmlSize: number; conversation: Conversation }> {
   const check = () => {
     if (signal?.aborted) throw new DOMException("Export aborted", "AbortError")
@@ -1349,7 +1406,7 @@ async function exportCurrentSessionV2(
   check()
   const session = await ctx.session.get({ sessionID })
   check()
-  const rawMessages = await ctx.session.context({ sessionID })
+  const rawMessages = await resolveSessionMessages(ctx, sessionID, fullHistory)
 
   const cwd = ctx.location?.directory || process.cwd()
   const sessionForMeta = { ...(session ?? {}), id: session?.id ?? sessionID, directory: session?.directory ?? cwd }
