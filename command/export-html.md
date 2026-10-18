@@ -1,5 +1,5 @@
 ---
-description: Export this conversation to a single-file HTML report
+description: Deprecated, use /export-session. Prompt-based export that appends to the session.
 ---
 
 Call the `export_html` tool once to export this conversation to a single-file, offline-portable HTML report with these `$ARGUMENTS` mapped to its parameters, then reply with the absolute path and the export stats it returns.

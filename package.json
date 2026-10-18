@@ -1,6 +1,6 @@
 {
   "name": "opencode-export-html",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "OpenCode plugin to export a conversation to a single-file, offline-portable HTML report",
   "type": "module",
   "exports": {
