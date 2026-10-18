@@ -1,6 +1,7 @@
 import { Plugin } from "@opencode/plugin"
 import * as path from "node:path"
 import { promises as fs } from "node:fs"
+import { openReport } from "./open-report"
 
 /* ============================================================================
  * export_html — export the current opencode conversation to a single, portable,
@@ -26,6 +27,7 @@ export type ExportOptions = {
   includeFiles?: boolean
   redact?: boolean
   title?: string
+  open?: boolean
 }
 
 type SessionMeta = {
@@ -177,6 +179,14 @@ export function parseExportArgs(text: string): ExportOptions {
       case "--no-redact":
         noValue()
         opts.redact = false
+        break
+      case "--open":
+        noValue()
+        opts.open = true
+        break
+      case "--no-open":
+        noValue()
+        opts.open = false
         break
       case "--title":
         opts.title = readValue()
@@ -1421,6 +1431,26 @@ export async function exportCurrentSessionV2(
   return { file, htmlSize: Buffer.byteLength(html), conversation }
 }
 
+const EXPORT_STATUS_FILE = ".export-session.json"
+
+type ExportStatus =
+  | { status: "running"; started: number }
+  | { status: "done"; started: number; file: string; messages?: number; tools?: number }
+  | { status: "error"; started: number; message: string }
+
+async function writeExportStatus(cwd: string, status: ExportStatus): Promise<void> {
+  try {
+    const directory = path.join(cwd, "exports")
+    await fs.mkdir(directory, { recursive: true })
+    const file = path.join(directory, EXPORT_STATUS_FILE)
+    const temporary = `${file}.tmp`
+    await fs.writeFile(temporary, JSON.stringify(status), "utf-8")
+    await fs.rename(temporary, file)
+  } catch {
+    // Status is only for TUI feedback; never block the export.
+  }
+}
+
 /* -------------------------- 8. plugin export ------------------------------ */
 
 export default Plugin.define({
@@ -1477,8 +1507,25 @@ export default Plugin.define({
         description:
           "Export this conversation to a single-file HTML report immediately, without prompting the model or appending to the session.",
         async execute({ sessionID, prompt }) {
-          const opts = parseExportArgs(prompt.text)
-          await exportCurrentSessionV2(ctx, sessionID, opts)
+          const cwd = ctx.location?.directory || process.cwd()
+          const started = Date.now()
+          try {
+            const opts = parseExportArgs(prompt.text)
+            await writeExportStatus(cwd, { status: "running", started })
+            const { file, conversation } = await exportCurrentSessionV2(ctx, sessionID, opts)
+            await writeExportStatus(cwd, {
+              status: "done",
+              started,
+              file,
+              messages: conversation.stats.messages,
+              tools: conversation.stats.tools,
+            })
+            if (opts.open !== false) openReport(file)
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error)
+            await writeExportStatus(cwd, { status: "error", started, message })
+            throw error
+          }
         },
       })
     })

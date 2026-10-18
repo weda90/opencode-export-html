@@ -34,6 +34,15 @@ describe("parseExportArgs", () => {
     expect(parseExportArgs("--no-redact")).toEqual({ redact: false })
   })
 
+  test("parses --open and --no-open", () => {
+    expect(parseExportArgs("--open")).toEqual({ open: true })
+    expect(parseExportArgs("--no-open")).toEqual({ open: false })
+  })
+
+  test("rejects a value on --open", () => {
+    expect(() => parseExportArgs("--open=1")).toThrow(/does not take a value/)
+  })
+
   test("parses quoted and equals-form titles", () => {
     expect(parseExportArgs('--title "My Report"')).toEqual({ title: "My Report" })
     expect(parseExportArgs("--title='My Report'")).toEqual({ title: "My Report" })
@@ -132,12 +141,17 @@ describe("export-session command", () => {
   test("execute writes the report without prompting or synthesizing", async () => {
     await withCtx(async (added, calls, dir) => {
       const command = added.commands.find((entry) => entry.name === "export-session")
-      await command.execute({ sessionID: "ses_demo", prompt: { text: "" }, delivery: "queue" })
+      await command.execute({ sessionID: "ses_demo", prompt: { text: "--no-open" }, delivery: "queue" })
 
       const files = await readdir(path.join(dir, "exports"))
-      expect(files.filter((file) => file.endsWith(".html"))).toHaveLength(1)
-      const html = await readFile(path.join(dir, "exports", files[0]), "utf-8")
+      const reports = files.filter((file) => file.endsWith(".html"))
+      expect(reports).toHaveLength(1)
+      const html = await readFile(path.join(dir, "exports", reports[0]), "utf-8")
       expect(html).toContain("Hello from the test session")
+
+      const status = JSON.parse(await readFile(path.join(dir, "exports", ".export-session.json"), "utf-8"))
+      expect(status.status).toBe("done")
+      expect(status.file).toBe(path.join(dir, "exports", reports[0]))
       expect(calls).toEqual({ prompt: 0, synthetic: 0 })
     })
   })
@@ -147,24 +161,30 @@ describe("export-session command", () => {
       const command = added.commands.find((entry) => entry.name === "export-session")
       await command.execute({
         sessionID: "ses_demo",
-        prompt: { text: '--theme dark --title "Demo Report"' },
+        prompt: { text: '--theme dark --title "Demo Report" --no-open' },
         delivery: "queue",
       })
 
       const files = await readdir(path.join(dir, "exports"))
-      const html = await readFile(path.join(dir, "exports", files[0]), "utf-8")
+      const report = files.find((file) => file.endsWith(".html"))
+      const html = await readFile(path.join(dir, "exports", report!), "utf-8")
       expect(html).toContain('data-theme-initial="dark"')
       expect(html).toContain("<title>Demo Report")
     })
   })
 
-  test("execute rejects an unknown option and writes nothing", async () => {
+  test("execute rejects an unknown option and writes no report", async () => {
     await withCtx(async (added, _calls, dir) => {
       const command = added.commands.find((entry) => entry.name === "export-session")
       await expect(
         command.execute({ sessionID: "ses_demo", prompt: { text: "--wat" }, delivery: "queue" }),
       ).rejects.toThrow(/Unknown option/)
-      await expect(readdir(path.join(dir, "exports"))).rejects.toThrow()
+
+      const files = await readdir(path.join(dir, "exports")).catch(() => [] as string[])
+      expect(files.filter((file) => file.endsWith(".html"))).toEqual([])
+      const status = JSON.parse(await readFile(path.join(dir, "exports", ".export-session.json"), "utf-8"))
+      expect(status.status).toBe("error")
+      expect(status.message).toMatch(/Unknown option/)
     })
   })
 })
