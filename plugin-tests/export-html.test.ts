@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test"
 import {
   applyRedaction,
   escapeHtml,
-  extractMessageText,
   isExportHtmlPrompt,
   loadConversation,
   markdownToHtml,
@@ -238,15 +237,6 @@ describe("loadConversation", () => {
     ]
     const conv = await loadConversation(session, messages, { redact: true })
     expect(conv.messages).toHaveLength(0)
-  })
-})
-
-describe("extractMessageText", () => {
-  test("extracts text from string or parts-based messages", () => {
-    expect(extractMessageText({ text: "hello" })).toBe("hello")
-    expect(extractMessageText(null)).toBe("")
-    expect(extractMessageText({ parts: [{ type: "text", text: "a" }, { type: "tool", tool: "x" }, { type: "text", text: "b" }] })).toBe("a\nb")
-    expect(extractMessageText({ parts: [{ type: "tool", tool: "x" }] })).toBe("")
   })
 })
 

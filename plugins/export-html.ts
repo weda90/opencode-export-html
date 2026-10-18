@@ -1,4 +1,4 @@
-import { type Plugin, tool } from "@opencode-ai/plugin"
+import { Plugin } from "@opencode/plugin"
 import * as path from "node:path"
 import { promises as fs } from "node:fs"
 
@@ -256,7 +256,7 @@ const SANITIZE_OPTIONS = {
 
 export async function markdownToHtml(text: string): Promise<string> {
   const mod = await import("marked")
-  const api = (mod.default ?? mod.marked) as any
+  const api = ((mod as any).default ?? mod.marked) as any
   if (!api || typeof api.parse !== "function") throw new Error("marked: no parse export")
   const raw = api.parse(text, { gfm: true, breaks: false })
   const html = typeof raw === "string" ? raw : await raw
@@ -932,7 +932,7 @@ async function highlightDiffLine(text: string, language?: string): Promise<strin
   if (language) {
     try {
       const mod = await import("highlight.js")
-      const h = (mod.default ?? mod) as any
+      const h = ((mod as any).default ?? mod) as any
       return h.highlight(text, { language, ignoreIllegals: true }).value as string
     } catch {
       return escapeHtml(text)
@@ -1109,23 +1109,96 @@ function resolveOutput(opts: ExportOptions, cwd: string, meta: SessionMeta): str
   return path.join(dir, `${base}-${stamp()}.html`)
 }
 
-async function exportCurrentSession(
-  client: any,
+/* ----------------- 7. V2 message normalization ---------------------- */
+/* V2 ctx.session.context() returns SessionMessageInfo[] (typed message
+ * variants), while loadConversation() consumes the { info, parts } shape.
+ * This adapter bridges the two without touching the renderer. */
+
+type V2Part = { type: string; [k: string]: any }
+type V2Info = { role: string; [k: string]: any }
+
+function toolStateToLegacy(name: string, st: any): { tool: string; state: any } {
+  const status = st?.status
+  if (status === "completed") {
+    const content = Array.isArray(st.content) ? st.content : []
+    const output = content
+      .map((c: any) => (c?.type === "text" ? String(c.text ?? "") : JSON.stringify(c ?? null)))
+      .join("\n")
+    return { tool: name, state: { status, input: st.input ?? {}, output, title: st.title, metadata: st.metadata } }
+  }
+  if (status === "error") {
+    const err = st.error
+    const message = typeof err === "string" ? err : (err?.data?.message ?? err?.message ?? JSON.stringify(err ?? null))
+    const content = Array.isArray(st.content) ? st.content : []
+    const output = content
+      .map((c: any) => (c?.type === "text" ? String(c.text ?? "") : JSON.stringify(c ?? null)))
+      .join("\n")
+    return { tool: name, state: { status, input: st.input ?? {}, error: message, output: output || undefined } }
+  }
+  return { tool: name, state: { status: "pending", input: st?.input ?? {} } }
+}
+
+export function normalizeV2Messages(messages: any[]): Array<{ info: V2Info; parts: V2Part[] }> {
+  const out: Array<{ info: V2Info; parts: V2Part[] }> = []
+  for (const m of messages ?? []) {
+    if (!m || typeof m !== "object") continue
+    // Already legacy-shaped (e.g. fixtures / tests) — pass through.
+    if ("info" in m || "parts" in m) {
+      out.push({ info: (m as any).info ?? {}, parts: (m as any).parts ?? [] })
+      continue
+    }
+    if (m.type === "user") {
+      const parts: V2Part[] = [{ type: "text", text: String(m.text ?? "") }]
+      for (const f of m.files ?? []) parts.push({ type: "file", mime: f.mime, filename: f.filename, url: f.uri ?? f.url })
+      out.push({ info: { role: "user", time: m.time }, parts })
+    } else if (m.type === "assistant") {
+      const model = m.model ?? {}
+      const info: V2Info = {
+        role: "assistant",
+        time: m.time,
+        modelID: model.id,
+        providerID: model.providerID,
+        agent: m.agent,
+        finish: m.finish,
+        error: m.error ? (typeof m.error === "string" ? m.error : (m.error?.data?.message ?? m.error?.message)) : undefined,
+      }
+      const parts: V2Part[] = []
+      for (const c of m.content ?? []) {
+        if (c?.type === "text") parts.push({ type: "text", text: String(c.text ?? ""), synthetic: c.synthetic, ignored: c.ignored })
+        else if (c?.type === "reasoning") parts.push({ type: "reasoning", text: String(c.text ?? "") })
+        else if (c?.type === "tool") {
+          const t = toolStateToLegacy(String(c.name ?? "tool"), c.state ?? {})
+          parts.push({ type: "tool", tool: t.tool, state: t.state, attachments: [] })
+        } else if (c) parts.push({ type: String(c.type ?? "unknown").replace(/-/g, " ") })
+      }
+      if (m.finish) parts.push({ type: "step-finish", tokens: m.tokens ?? {}, cost: m.cost })
+      out.push({ info, parts })
+    }
+    // Other V2 message kinds (system, compaction, idle, …) carry no
+    // exportable content — skip them.
+  }
+  return out
+}
+
+async function exportCurrentSessionV2(
+  ctx: any,
+  sessionID: string,
   opts: ExportOptions,
-  context: { sessionID: string; directory: string; worktree: string; abort: AbortSignal },
+  signal?: AbortSignal,
 ): Promise<{ file: string; htmlSize: number; conversation: Conversation }> {
   const check = () => {
-    if (context.abort?.aborted) throw new DOMException("Export aborted", "AbortError")
+    if (signal?.aborted) throw new DOMException("Export aborted", "AbortError")
   }
 
   check()
-  const session = await sessionFetch<any>(client, "get", context.sessionID)
+  const session = await ctx.session.get({ sessionID })
   check()
-  const messages = await sessionFetch<Array<{ info?: any; parts?: any[] }>>(client, "messages", context.sessionID)
+  const rawMessages = await ctx.session.context({ sessionID })
 
-  const cwd = context.directory || process.cwd()
+  const cwd = ctx.location?.directory || process.cwd()
+  const sessionForMeta = { ...(session ?? {}), id: session?.id ?? sessionID, directory: session?.directory ?? cwd }
   check()
-  const conversation = await loadConversation(session, messages, opts, context.abort)
+  const conversation = await loadConversation(sessionForMeta, normalizeV2Messages(rawMessages), opts, signal)
   check()
   const html = await renderDocument(conversation, opts, cwd)
   check()
@@ -1137,77 +1210,52 @@ async function exportCurrentSession(
 
 /* -------------------------- 8. plugin export ------------------------------ */
 
-export function extractMessageText(message: any): string {
-  if (!message) return ""
-  if (typeof message.text === "string") return message.text
-  if (Array.isArray(message.parts)) {
-    return message.parts
-      .filter((p) => p && p.type === "text")
-      .map((p) => String(p.text ?? ""))
-      .join("\n")
-  }
-  return ""
-}
-
-export const ExportHtmlPlugin: Plugin = async ({ client, directory }) => {
-  const export_html = tool({
-    description:
-      "Export the current opencode conversation to a single-file, offline-portable HTML report (all CSS/JS/theme inline, local images embedded as data URIs).",
-    args: {
-      output: tool.schema
-        .string()
-        .optional()
-        .describe("Target .html file path (default: <project>/exports/<title>-<timestamp>.html)"),
-      theme: tool.schema.enum(["auto", "light", "dark"]).optional().describe("Initial colour theme of the generated file"),
-      includeReasoning: tool.schema.boolean().optional().describe("Include collapsed reasoning/thinking blocks (default false)"),
-      includeFiles: tool.schema.boolean().optional().describe("Embed local file/image attachments as data URIs (default true)"),
-      redact: tool.schema.boolean().optional().describe("Redact obvious secrets (API keys, tokens, {env:VAR} refs); default true"),
-      title: tool.schema.string().optional().describe("Override the title shown in the report header"),
-    },
-    async execute(args, context) {
-      const opts: ExportOptions = {
-        output: args.output,
-        theme: args.theme,
-        includeReasoning: args.includeReasoning,
-        includeFiles: args.includeFiles,
-        redact: args.redact,
-        title: args.title,
-      }
-      const { file, htmlSize, conversation } = await exportCurrentSession(client, opts, context as any)
-      const s = conversation.stats
-      const rel = file.startsWith(directory) ? file.slice(directory.length) : file
-      return {
-        title: "HTML export complete",
-        output:
-          `Exported conversation "${conversation.meta.title}" to:\n${file}\n\n` +
-          `${s.messages} messages · ${s.tools} tool calls · ${s.errors} errors · ${(htmlSize / 1024).toFixed(1)} KiB` +
-          (s.reasoning ? ` · ${s.reasoning} reasoning block(s)` : "") +
-          (s.redactions > 0 ? ` · ${s.redactions} value(s) redacted` : "") +
-          `\n\nOpen it with \`open "${rel}"\``,
-        metadata: { file, size: htmlSize, messages: s.messages, tools: s.tools, errors: s.errors, redactions: s.redactions },
-      }
-    },
-  })
-
-  return {
-    tool: { export_html },
-    hooks: {
-      "chat.params": async (input, output) => {
-        try {
-          const text = extractMessageText(input.message)
-          if (isExportHtmlPrompt(text)) {
-            output.options = {
-              ...output.options,
-              thinking: { type: "disabled" },
-              reasoning_effort: "none",
-            }
+export default Plugin.define({
+  id: "export-html",
+  async setup(ctx) {
+    const directory = ctx.location?.directory ?? ""
+    await ctx.tool.transform((editor) => {
+      editor.add({
+        name: "export_html",
+        description:
+          "Export the current opencode conversation to a single-file, offline-portable HTML report (all CSS/JS/theme inline, local images embedded as data URIs).",
+        input: {
+          type: "object",
+          properties: {
+            output: { type: "string", description: "Target .html file path (default: <project>/exports/<title>-<timestamp>.html)" },
+            theme: { type: "string", enum: ["auto", "light", "dark"], description: "Initial colour theme of the generated file" },
+            includeReasoning: { type: "boolean", description: "Include collapsed reasoning/thinking blocks (default false)" },
+            includeFiles: { type: "boolean", description: "Embed local file/image attachments as data URIs (default true)" },
+            redact: { type: "boolean", description: "Redact obvious secrets (API keys, tokens, {env:VAR} refs); default true" },
+            title: { type: "string", description: "Override the title shown in the report header" },
+          },
+          additionalProperties: false,
+        },
+        async execute(input, context) {
+          const args = (input ?? {}) as ExportOptions
+          const opts: ExportOptions = {
+            output: args.output,
+            theme: args.theme,
+            includeReasoning: args.includeReasoning,
+            includeFiles: args.includeFiles,
+            redact: args.redact,
+            title: args.title,
           }
-        } catch {
-          /* never let a params tweak break the chat turn */
-        }
-      },
-    },
-  }
-}
-
-export default ExportHtmlPlugin
+          const { file, htmlSize, conversation } = await exportCurrentSessionV2(ctx, context.sessionID, opts, context.signal)
+          const s = conversation.stats
+          const rel = file.startsWith(directory) ? file.slice(directory.length) : file
+          const text =
+            `Exported conversation "${conversation.meta.title}" to:\n${file}\n\n` +
+            `${s.messages} messages · ${s.tools} tool calls · ${s.errors} errors · ${(htmlSize / 1024).toFixed(1)} KiB` +
+            (s.reasoning ? ` · ${s.reasoning} reasoning block(s)` : "") +
+            (s.redactions > 0 ? ` · ${s.redactions} value(s) redacted` : "") +
+            `\n\nOpen it with \`open "${rel}"\``
+          return {
+            content: text,
+            metadata: { file, size: htmlSize, messages: s.messages, tools: s.tools, errors: s.errors, redactions: s.redactions },
+          }
+        },
+      })
+    })
+  },
+})

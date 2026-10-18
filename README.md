@@ -6,10 +6,24 @@ An [OpenCode](https://opencode.ai) plugin that exports the current conversation 
 
 - **Self-contained output** — one `.html` file, no external assets, works offline.
 - **Chat transcript** — user/assistant messages, tool calls, and reasoning (thinking) blocks rendered for review and learning.
-- **Code highlighting** — code blocks are syntax-highlighted.
+- **Split diff cards** — `edit`, `apply_patch`, and `write` tool calls render as side-by-side diffs with syntax highlighting.
+- **Code highlighting** — code blocks and tool output are syntax-highlighted.
 - **Redaction (on by default)** — obvious secrets (API keys, tokens, `{env:VAR}` refs) are redacted before export.
 - **Self-exclusion** — `/export-html` invocations (the command prompt and `export_html` tool calls) are stripped from the report, so exports never contain themselves.
 - **Themes** — `light`, `dark`, or `auto`.
+
+## Versions
+
+| Tag | OpenCode | Plugin API | Package |
+|-----|----------|------------|---------|
+| `v2.0.0` | V2 (2.0.x) | `@opencode/plugin` | `@opencode/plugin` |
+| `v1.0.0` | V1 (1.x) | `@opencode-ai/plugin` | `@opencode-ai/plugin` |
+
+`main` tracks the V2 plugin. V1 stays available at tag `v1.0.0`:
+
+```bash
+git checkout v1.0.0
+```
 
 ## Install
 
@@ -20,11 +34,11 @@ mkdir -p ~/.config/opencode/plugins
 cp plugins/export-html.ts ~/.config/opencode/plugins/
 ```
 
-Add it to the `plugin` array in `~/.config/opencode/opencode.json`:
+Add it to the `plugins` array in `~/.config/opencode/opencode.jsonc`:
 
-```json
+```jsonc
 {
-  "plugin": ["./plugins/export-html.ts"]
+  "plugins": ["./plugins/export-html.ts"]
 }
 ```
 
@@ -60,18 +74,21 @@ Default output is `./exports/<title>-<timestamp>.html`, or whichever path the to
 
 ```bash
 bun install
-bun test          # runs plugin-tests/export-html.test.ts
+bun test          # all plugin-tests
+bun run typecheck # tsc --noEmit
 ```
 
-Tests use `bun:test` and cover slugify, HTML escaping, markdown rendering, redaction, and document rendering.
+Tests use `bun:test` and cover slugify, HTML escaping, markdown rendering, redaction, document rendering, split diffs, self-exclusion, and the V2 message adapter.
 
 ## Layout
 
 ```
-plugins/export-html.ts          # the plugin
-plugin-tests/export-html.test.ts # bun tests
-plugin-tests/fixtures/           # test fixtures
-command/export-html.md           # /export-html slash command
+plugins/export-html.ts               # the plugin
+plugin-tests/export-html.test.ts     # core + diff + self-exclusion
+plugin-tests/export-html-v2.test.ts  # V2 plugin shape
+plugin-tests/export-html-v2adapter.test.ts # V2 message adapter
+plugin-tests/fixtures/               # test fixtures
+command/export-html.md               # /export-html slash command
 ```
 
 ## License
