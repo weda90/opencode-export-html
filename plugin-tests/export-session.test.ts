@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import * as path from "node:path"
-import mod, { exportCurrentSessionV2, parseExportArgs, resolveSessionMessages } from "../plugins/export-html.ts"
+import mod, { expandHome, exportCurrentSessionV2, parseExportArgs, resolveSessionMessages } from "../plugins/export-html.ts"
 
 describe("parseExportArgs", () => {
   test("empty text returns defaults", () => {
@@ -130,6 +130,14 @@ async function withCtx(
   }
 }
 
+describe("expandHome", () => {
+  test("expands a leading tilde", () => {
+    expect(expandHome("~/Desktop/report.html", "/Users/test")).toBe("/Users/test/Desktop/report.html")
+    expect(expandHome("~", "/Users/test")).toBe("/Users/test")
+    expect(expandHome("/tmp/report.html", "/Users/test")).toBe("/tmp/report.html")
+  })
+})
+
 describe("export-session command", () => {
   test("setup registers export_html and export-session", async () => {
     await withCtx(async (added) => {
@@ -170,6 +178,71 @@ describe("export-session command", () => {
       const html = await readFile(path.join(dir, "exports", report!), "utf-8")
       expect(html).toContain('data-theme-initial="dark"')
       expect(html).toContain("<title>Demo Report")
+    })
+  })
+
+  test("execute writes into an existing output directory", async () => {
+    await withCtx(async (added, _calls, dir) => {
+      const output = path.join(dir, "reports")
+      await mkdir(output, { recursive: true })
+      const command = added.commands.find((entry) => entry.name === "export-session")
+      await command.execute({
+        sessionID: "ses_demo",
+        prompt: { text: `--output "${output}" --no-open` },
+        delivery: "queue",
+      })
+
+      const reports = (await readdir(output)).filter((file) => file.endsWith(".html"))
+      expect(reports).toHaveLength(1)
+      const html = await readFile(path.join(output, reports[0]), "utf-8")
+      expect(html).toContain("Hello from the test session")
+    })
+  })
+
+  test("execute creates a missing output directory", async () => {
+    await withCtx(async (added, _calls, dir) => {
+      const output = path.join(dir, "reports-new")
+      const command = added.commands.find((entry) => entry.name === "export-session")
+      await command.execute({
+        sessionID: "ses_demo",
+        prompt: { text: `--output "${output}" --no-open` },
+        delivery: "queue",
+      })
+
+      const reports = (await readdir(output)).filter((file) => file.endsWith(".html"))
+      expect(reports).toHaveLength(1)
+      const html = await readFile(path.join(output, reports[0]), "utf-8")
+      expect(html).toContain("Hello from the test session")
+    })
+  })
+
+  test("execute treats a trailing slash as a directory", async () => {
+    await withCtx(async (added, _calls, dir) => {
+      const output = path.join(dir, "reports-slash")
+      const command = added.commands.find((entry) => entry.name === "export-session")
+      await command.execute({
+        sessionID: "ses_demo",
+        prompt: { text: `--output "${output}/" --no-open` },
+        delivery: "queue",
+      })
+
+      const reports = (await readdir(output)).filter((file) => file.endsWith(".html"))
+      expect(reports).toHaveLength(1)
+    })
+  })
+
+  test("execute still writes a .html file path", async () => {
+    await withCtx(async (added, _calls, dir) => {
+      const output = path.join(dir, "nested", "custom.html")
+      const command = added.commands.find((entry) => entry.name === "export-session")
+      await command.execute({
+        sessionID: "ses_demo",
+        prompt: { text: `--output "${output}" --no-open` },
+        delivery: "queue",
+      })
+
+      const html = await readFile(output, "utf-8")
+      expect(html).toContain("Hello from the test session")
     })
   })
 

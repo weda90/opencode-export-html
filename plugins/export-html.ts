@@ -1,4 +1,5 @@
 import { Plugin } from "@opencode/plugin"
+import * as os from "node:os"
 import * as path from "node:path"
 import { promises as fs } from "node:fs"
 import { openReport } from "./open-report"
@@ -1234,11 +1235,35 @@ export async function renderDocument(conv: Conversation, opts: ExportOptions, cw
 
 /* ------------------------------ 7. tool ---------------------------------- */
 
-function resolveOutput(opts: ExportOptions, cwd: string, meta: SessionMeta): string {
-  if (opts.output) return path.resolve(cwd, opts.output)
-  const dir = path.join(cwd || process.cwd(), "exports")
+export function expandHome(value: string, home = os.homedir()): string {
+  if (value === "~") return home
+  if (value.startsWith("~/") || value.startsWith("~\\")) return path.join(home, value.slice(2))
+  return value
+}
+
+function defaultName(meta: SessionMeta): string {
   const base = slugify(meta.title) || `session-${meta.id.slice(-8)}`
-  return path.join(dir, `${base}-${stamp()}.html`)
+  return `${base}-${stamp()}.html`
+}
+
+function defaultOutput(cwd: string, meta: SessionMeta): string {
+  return path.join(cwd || process.cwd(), "exports", defaultName(meta))
+}
+
+async function resolveOutput(opts: ExportOptions, cwd: string, meta: SessionMeta): Promise<string> {
+  if (!opts.output) return defaultOutput(cwd, meta)
+
+  const explicitDirectory = /[\\/]$/.test(opts.output)
+  const target = path.resolve(cwd, expandHome(opts.output))
+  const stats = await fs.stat(target).catch(() => undefined)
+
+  if (explicitDirectory) {
+    if (stats && !stats.isDirectory()) throw new Error(`Output path is not a directory: ${target}`)
+    return path.join(target, defaultName(meta))
+  }
+  if (stats?.isDirectory()) return path.join(target, defaultName(meta))
+  if (stats) return target
+  return /\.html?$/i.test(target) ? target : path.join(target, defaultName(meta))
 }
 
 /* ----------------- 7. V2 message normalization ---------------------- */
@@ -1425,7 +1450,7 @@ export async function exportCurrentSessionV2(
   check()
   const html = await renderDocument(conversation, opts, cwd)
   check()
-  const file = resolveOutput(opts, cwd, conversation.meta)
+  const file = await resolveOutput(opts, cwd, conversation.meta)
   await fs.mkdir(path.dirname(file), { recursive: true })
   await fs.writeFile(file, html, "utf-8")
   return { file, htmlSize: Buffer.byteLength(html), conversation }

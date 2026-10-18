@@ -65,11 +65,12 @@ called through the API.
 /export-session
 /export-session --theme dark --title "Release review"
 /export-session --no-open --output ~/Desktop/report.html
+/export-session --output ./exports
 ```
 
 | Option | Description |
 |--------|-------------|
-| `--output <path>` | Output file path |
+| `--output <path>` | Output file (`.html`/`.htm`) or directory (created if missing) |
 | `--theme dark\|light\|auto` | Color theme |
 | `--include-reasoning` | Include thinking/reasoning blocks |
 | `--no-include-files` | Do not embed local files as data URIs (embedding is on by default) |
@@ -80,7 +81,9 @@ called through the API.
 
 Default output is `./exports/<title>-<timestamp>.html` under the session's
 working directory (which may be a git worktree). Use `--output` to place it
-elsewhere.
+elsewhere. A leading `~` expands to your home directory. If `--output` is a
+directory (existing, missing, or ending in `/`), the default filename is
+written inside it. A path ending in `.html` or `.htm` is treated as a file.
 
 ### `/export-html` (legacy, prompt-based)
 
