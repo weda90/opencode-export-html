@@ -1410,5 +1410,17 @@ export default Plugin.define({
         },
       })
     })
+
+    await ctx.command.transform((editor) => {
+      editor.add({
+        name: "export-session",
+        description:
+          "Export this conversation to a single-file HTML report immediately, without prompting the model or appending to the session.",
+        async execute({ sessionID, prompt }) {
+          const opts = parseExportArgs(prompt.text)
+          await exportCurrentSessionV2(ctx, sessionID, opts)
+        },
+      })
+    })
   },
 })
